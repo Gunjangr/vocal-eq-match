@@ -1,0 +1,1332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vocal EQ Match</title>
+<meta name="description" content="Match the AI model output to your own mic recording with a simple EQ, and save named EQs to a shared list.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230A2540'/%3E%3Cg fill='%2334D3C0'%3E%3Crect x='6' y='13' width='3' height='6' rx='1.5'/%3E%3Crect x='11' y='9' width='3' height='14' rx='1.5'/%3E%3Crect x='16' y='5' width='3' height='22' rx='1.5'/%3E%3Crect x='21' y='10' width='3' height='12' rx='1.5'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* Layout: IPHIPI dashboard shell. Left rail picks mic + recording; main grid holds player, EQ, match picture, saved list. */
+:root{
+  /* IPHIPI dark (dashboard surface, single theme by choice) */
+  --bg:#06192E; --surface:#0A2540; --inset:#123A5C; --line:#1E4569;
+  --text:#E9F1F7; --text-2:#AFC3D2; --text-3:#AFC3D2; --text-4:#7F97A9;
+  --accent:#34D3C0; --accent-soft:rgba(52,211,192,.14);
+  --pop:#FF8E7E; --pop-soft:rgba(255,142,126,.14);
+  --ok:#46D392; --ok-soft:rgba(70,211,146,.14);
+  --warn:#F5B942; --warn-soft:rgba(245,185,66,.14);
+  --bad:#FF8E7E; --bad-soft:rgba(255,142,126,.16);
+  --focus:#34D3C0; --on-accent:#06192E;
+  --f-display:"Space Grotesk","Inter",system-ui,sans-serif;
+  --f-body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"SF Mono",Consolas,monospace;
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px;
+  --s7:32px; --s8:40px; --s9:48px; --s10:64px; --s11:80px; --s12:96px;
+  --r-sm:6px; --r-md:10px; --r-lg:14px; --r-pill:999px;
+  --dur-1:120ms; --dur-2:200ms; --dur-3:320ms; --ease:cubic-bezier(.2,.7,.2,1);
+  color-scheme:dark;
+}
+*{box-sizing:border-box} html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:400 15px/1.6 var(--f-body);-webkit-font-smoothing:antialiased}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:var(--r-sm)}
+a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline;text-underline-offset:3px}
+.card,.btn,.navitem,.input{transition:background var(--dur-2) var(--ease),border-color var(--dur-2) var(--ease),color var(--dur-2) var(--ease)}
+.input:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px var(--accent-soft)}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+
+h1,h2,h3{text-wrap:balance}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.eyebrow{margin:0;font:600 11px/1.3 var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.muted{color:var(--text-3)}
+.cap{font:500 12px/1.4 var(--f-body);letter-spacing:.01em;color:var(--text-4)}
+
+/* shell */
+.shell{display:grid;grid-template-columns:232px minmax(0,1fr);min-height:100vh}
+.side{background:var(--surface);border-right:1px solid var(--line);padding:var(--s5) var(--s4);display:flex;flex-direction:column;gap:var(--s5);
+      position:sticky;top:env(safe-area-inset-top,0px);height:100vh;overflow:auto}
+.brandrow{display:flex;align-items:center;gap:var(--s3);color:var(--accent)}
+.brandrow b{font:700 16px/1.2 var(--f-display);color:var(--text);letter-spacing:-.01em}
+.side-group{display:flex;flex-direction:column;gap:var(--s2)}
+.side-foot{margin-top:auto;display:flex;flex-direction:column;gap:var(--s1)}
+.main{padding:var(--s6);display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:var(--s5);align-content:start;min-width:0}
+.span-12{grid-column:1/-1}.span-7{grid-column:span 7}.span-5{grid-column:span 5}
+.topbar{grid-column:1/-1;display:flex;align-items:flex-end;gap:var(--s4);justify-content:space-between;flex-wrap:wrap}
+.topbar h1{margin:var(--s1) 0 0;font:700 28px/1.2 var(--f-display);letter-spacing:-.015em}
+.topbar .sub{margin:var(--s1) 0 0;color:var(--text-2);max-width:68ch}
+.top-actions{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap}
+.who{display:inline-flex;align-items:center;gap:var(--s2);font:500 13px/1.4 var(--f-body);color:var(--text-3)}
+.who img{width:24px;height:24px;border-radius:var(--r-pill)}
+
+/* components */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);padding:var(--s5);min-width:0;display:flex;flex-direction:column;gap:var(--s4)}
+.card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:var(--s3);flex-wrap:wrap}
+.card-title{margin:var(--s1) 0 0;font:600 16px/1.4 var(--f-body);display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--s2);padding:10px 16px;border-radius:var(--r-sm);
+     font:600 14px/1 var(--f-body);border:1px solid transparent;cursor:pointer;background:transparent;color:var(--text);white-space:nowrap}
+.btn svg{flex:none}
+.btn-primary{background:var(--accent);color:var(--on-accent)}
+.btn-ghost{background:transparent;color:var(--text);border-color:var(--line)}
+.btn-danger{background:var(--bad-soft);color:var(--pop);border-color:var(--pop)}
+.btn:hover{filter:brightness(1.06)} .btn-ghost:hover{background:var(--inset);filter:none}
+.btn:disabled{opacity:.45;pointer-events:none}
+.btn-sm{padding:var(--s2) var(--s3);font-size:13px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:var(--r-pill);font:600 12px/1.4 var(--f-body);white-space:nowrap}
+.chip .dot{width:6px;height:6px;border-radius:var(--r-pill);background:currentColor}
+.chip-ok{background:var(--ok-soft);color:var(--ok)} .chip-warn{background:var(--warn-soft);color:var(--warn)}
+.chip-bad{background:var(--bad-soft);color:var(--bad)} .chip-accent{background:var(--accent-soft);color:var(--accent)}
+.chip-plain{background:transparent;color:var(--text-2);border:1px solid var(--line)}
+.navitem{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);padding:9px var(--s3);border-radius:var(--r-sm);
+         color:var(--text-2);font:500 14px/1.2 var(--f-body);text-decoration:none;background:transparent;border:1px solid transparent;cursor:pointer;text-align:left;width:100%}
+.navitem:hover{background:var(--inset);color:var(--text)}
+.navitem[aria-current="page"]{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.navitem .nav-meta{display:flex;align-items:center;gap:var(--s2)}
+.navitem .dur{font:400 12px/1 var(--f-mono);color:var(--text-4)}
+.navitem[aria-current="page"] .dur{color:var(--accent)}
+.eqdot{width:8px;height:8px;border-radius:var(--r-pill);background:var(--accent)}
+.field label{display:block;font:500 13px/1.4 var(--f-body);color:var(--text-2);margin-bottom:var(--s2)}
+.input{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);color:var(--text);font:400 14px/1.5 var(--f-body)}
+.input::placeholder{color:var(--text-4)}
+textarea.input{resize:vertical;min-height:64px}
+
+/* segmented control */
+.seg{display:inline-flex;gap:var(--s1);padding:var(--s1);background:var(--bg);border:1px solid var(--line);border-radius:var(--r-sm);flex-wrap:wrap}
+.seg button{border:1px solid transparent;background:transparent;color:var(--text-2);font:600 13px/1.2 var(--f-body);padding:var(--s2) var(--s3);border-radius:var(--r-sm);cursor:pointer;display:inline-flex;flex-direction:column;align-items:flex-start;gap:2px}
+.seg button small{font:500 11px/1.2 var(--f-body);color:var(--text-4)}
+.seg button:hover{background:var(--inset);color:var(--text)}
+.seg button[aria-checked="true"]{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
+.seg button[aria-checked="true"] small{color:var(--accent)}
+.seg-full{display:grid;grid-template-columns:1fr 1fr}
+.seg-full button{align-items:center;text-align:center}
+
+/* notices */
+.notice{display:flex;align-items:center;gap:var(--s3);justify-content:space-between;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);padding:var(--s3) var(--s4);color:var(--text-2);font-size:14px}
+.notice p{margin:0;max-width:68ch}
+.notice.warn{border-color:var(--warn)}
+.notice .acts{display:flex;gap:var(--s2);flex-wrap:wrap}
+
+/* player */
+.player-row{display:flex;align-items:center;gap:var(--s4);flex-wrap:wrap}
+.btn-play{min-width:112px;padding:12px 18px;font-size:15px}
+.time{font:600 14px/1 var(--f-mono);color:var(--text-2)}
+.keys{margin:0;font:500 12px/1.4 var(--f-body);color:var(--text-4)}
+kbd{font:600 11px/1 var(--f-mono);padding:2px 6px;border:1px solid var(--line);border-radius:var(--r-sm);color:var(--text-2);background:var(--bg)}
+.wave-wrap{position:relative;height:76px;background:var(--bg);border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden}
+#wave{display:block;width:100%;height:100%;cursor:pointer;touch-action:pan-y}
+.wave-foot{display:flex;align-items:center;gap:var(--s3);justify-content:space-between;flex-wrap:wrap;min-height:32px}
+.loadstate{font:500 13px/1.4 var(--f-body);color:var(--text-3)}
+.loadstate.err{color:var(--bad)}
+
+/* EQ */
+.scope{display:flex;flex-direction:column;gap:var(--s2)}
+.bands-scroll{overflow-x:auto;margin-inline:calc(var(--s2) * -1);padding-inline:var(--s2)}
+.bands{display:grid;grid-template-columns:repeat(7,minmax(52px,1fr));gap:var(--s2);min-width:380px}
+.band{display:flex;flex-direction:column;align-items:center;gap:var(--s2);min-width:0}
+.band-val{font:600 13px/1 var(--f-mono);font-variant-numeric:tabular-nums;color:var(--text);min-height:14px}
+.band-val.zero{color:var(--text-4)}
+.band-word{font:600 12px/1.2 var(--f-body);color:var(--text);text-align:center}
+.band-hz{font:400 11px/1.2 var(--f-mono);color:var(--text-4);text-align:center}
+.vs{position:relative;width:40px;height:188px;cursor:pointer;touch-action:none;border-radius:var(--r-sm)}
+.vs-track{position:absolute;left:50%;top:9px;bottom:9px;width:6px;transform:translateX(-50%);background:var(--inset);border-radius:var(--r-pill)}
+.vs-zero{position:absolute;left:-8px;right:-8px;top:50%;height:1px;background:var(--text-4)}
+.vs-fill{position:absolute;left:0;right:0;background:var(--accent);border-radius:var(--r-pill)}
+.vs-thumb{position:absolute;left:50%;width:30px;height:14px;transform:translate(-50%,-50%);background:var(--text);border:2px solid var(--accent);border-radius:var(--r-sm);pointer-events:none}
+.vs:hover .vs-thumb{background:var(--accent)}
+.level{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:var(--s3);align-items:center}
+.level label{font:600 13px/1.3 var(--f-body);color:var(--text)}
+.level label small{display:block;font:500 12px/1.3 var(--f-body);color:var(--text-4)}
+input[type=range]{accent-color:var(--accent);width:100%;margin:0}
+.level-val{font:600 13px/1 var(--f-mono);min-width:64px;text-align:right}
+.loud{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;font-size:13px;color:var(--text-2)}
+.loud b{font:600 13px/1 var(--f-mono);color:var(--text)}
+.eq-actions{display:flex;gap:var(--s2);flex-wrap:wrap;align-items:center}
+.eq-actions .spacer{flex:1}
+.applied{font:500 13px/1.4 var(--f-body);color:var(--text-3);margin:0}
+.applied b{color:var(--text);font-weight:600}
+
+/* chart */
+.chart-wrap{position:relative;min-height:250px}
+.chart-wrap svg{display:block;width:100%;height:250px;overflow:visible}
+.c-grid{stroke:var(--line);stroke-width:1}
+.c-zero{stroke:var(--text-4);stroke-width:1}
+.c-band{fill:var(--accent);fill-opacity:.10}
+.c-area{fill:var(--accent);fill-opacity:.12}
+.c-line{fill:none;stroke:var(--accent);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.c-axis{fill:var(--text-4);font:400 11px var(--f-mono)}
+.c-word{fill:var(--text-4);font:500 11px var(--f-body)}
+.c-note{fill:var(--text-4);font:500 11px var(--f-body)}
+.c-tick{stroke:var(--line);stroke-width:1}
+.c-cross{stroke:var(--text-4);stroke-width:1}
+.c-dot{fill:var(--accent);stroke:var(--surface);stroke-width:2}
+.c-hit{fill:transparent}
+.tip{position:absolute;top:0;pointer-events:none;background:var(--inset);border:1px solid var(--line);border-radius:var(--r-sm);padding:var(--s2) var(--s3);font:500 12px/1.45 var(--f-body);color:var(--text);max-width:240px;z-index:2}
+.tip b{font-family:var(--f-mono)}
+.tip .hint{color:var(--text-2)}
+.score{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap}
+.pic-note{margin:0;font-size:13px;color:var(--text-2);max-width:68ch}
+
+/* saved table */
+.saved-tools{display:flex;gap:var(--s3);flex-wrap:wrap;align-items:center;justify-content:space-between}
+.saved-tools .left,.saved-tools .right{display:flex;gap:var(--s2);flex-wrap:wrap;align-items:center}
+.saved-tools .input{width:220px}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r-md)}
+.tbl{width:100%;border-collapse:collapse;background:var(--surface);font-size:13px}
+.tbl th{font:600 11px/1.3 var(--f-body);letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);text-align:left;padding:10px var(--s3);border-bottom:1px solid var(--line);background:var(--inset);white-space:nowrap}
+.tbl th.num{text-align:right}
+.tbl th .hz{display:block;text-transform:none;letter-spacing:0;font:500 11px/1.3 var(--f-mono);color:var(--text-2)}
+.tbl td{padding:10px var(--s3);border-bottom:1px solid var(--line);color:var(--text-2);vertical-align:top}
+.tbl tr:last-child td{border-bottom:0} .tbl tbody tr:hover{background:var(--inset)}
+.tbl .num{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums;color:var(--text);white-space:nowrap}
+.tbl .num.zero{color:var(--text-3)}
+.tbl .name{font-weight:600;color:var(--text);min-width:22ch}
+.tbl .note{display:block;font-size:12px;color:var(--text-3);max-width:28ch}
+.tbl .acts{display:flex;gap:var(--s1);justify-content:flex-end;flex-wrap:nowrap}
+.tbl .who-cell{white-space:nowrap}
+.empty{text-align:center;padding:var(--s9) var(--s6);color:var(--text-3)}
+.empty h3{color:var(--text);margin:0 0 var(--s2);font:600 16px/1.4 var(--f-body)}
+.empty p{margin:0 auto;max-width:52ch}
+
+/* dialogs */
+dialog{background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:var(--r-lg);padding:0;width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 32px)}
+dialog.wide{width:min(760px,calc(100vw - 32px))}
+dialog::backdrop{background:rgba(6,25,46,.78)}
+.dlg{display:flex;flex-direction:column;gap:var(--s4);padding:var(--s6)}
+.dlg h2{margin:0;font:700 21px/1.3 var(--f-display);letter-spacing:-.01em}
+.dlg p{margin:0;color:var(--text-2);max-width:68ch}
+.dlg-acts{display:flex;justify-content:flex-end;gap:var(--s2);flex-wrap:wrap}
+.err{color:var(--bad);font-size:13px;margin:0}
+.vals{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--s2)}
+.vals div{background:var(--bg);border:1px solid var(--line);border-radius:var(--r-sm);padding:var(--s2);display:flex;flex-direction:column;gap:2px}
+.vals span{font:500 11px/1.2 var(--f-body);color:var(--text-4)}
+.vals b{font:600 13px/1.2 var(--f-mono);color:var(--text)}
+.choice{display:grid;gap:var(--s2)}
+.choice .btn{justify-content:flex-start;padding:var(--s3) var(--s4);white-space:normal;text-align:left;line-height:1.4}
+.guide{overflow:auto}
+.guide h3{margin:var(--s2) 0 0;font:600 16px/1.4 var(--f-body);color:var(--text)}
+.guide ol,.guide ul{margin:0;padding-left:var(--s5);color:var(--text-2);display:flex;flex-direction:column;gap:var(--s2);max-width:68ch}
+.guide li b{color:var(--text)}
+.gtbl{width:100%;border-collapse:collapse;font-size:13px}
+.gtbl td,.gtbl th{padding:var(--s2) var(--s3);border-bottom:1px solid var(--line);text-align:left;color:var(--text-2);vertical-align:top}
+.gtbl th{font:600 11px/1.3 var(--f-body);letter-spacing:.06em;text-transform:uppercase;color:var(--text-3)}
+.gtbl td:first-child{font-family:var(--f-mono);color:var(--text);white-space:nowrap}
+.gtbl td:nth-child(2){color:var(--text);font-weight:600;white-space:nowrap}
+#copy-text{font:400 12px/1.5 var(--f-mono);min-height:220px}
+
+.toast{position:fixed;left:50%;bottom:calc(var(--s6) + env(safe-area-inset-bottom,0px));transform:translate(-50%,8px);opacity:0;background:var(--inset);border:1px solid var(--line);color:var(--text);
+       padding:var(--s3) var(--s4);border-radius:var(--r-sm);font:500 14px/1.4 var(--f-body);max-width:calc(100vw - 32px);transition:opacity var(--dur-2) var(--ease),transform var(--dur-2) var(--ease);pointer-events:none;z-index:10}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+@media(max-width:1080px){
+  .shell{grid-template-columns:minmax(0,1fr)}
+  .side{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line);padding:var(--s4) var(--s6);display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--s4) var(--s6);align-items:start}
+  .brandrow{grid-column:1/-1}
+  #rec-list{display:flex;flex-wrap:wrap;gap:var(--s1)}
+  #rec-list .navitem{width:auto}
+  .side-foot{grid-column:1/-1;margin-top:0;flex-direction:row;flex-wrap:wrap;align-items:center;gap:var(--s3)}
+  .span-7,.span-5{grid-column:1/-1}
+}
+@media(max-width:720px){
+  .side{grid-template-columns:minmax(0,1fr);padding:var(--s4)}
+  .main{padding:var(--s4);gap:var(--s4)}
+  .topbar h1{font-size:24px}
+  .vs{height:156px}
+  .vals{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .level{grid-template-columns:minmax(0,1fr) auto}
+  .level label{grid-column:1/-1}
+  .saved-tools .input{width:100%}
+  .dlg{padding:var(--s5)}
+  .seg-listen{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%}
+}
+@media(max-width:520px){
+  .bands{grid-template-columns:repeat(4,minmax(0,1fr));min-width:0;row-gap:var(--s5)}
+}
+.btn[hidden],.notice[hidden],.input[hidden],svg[hidden]{display:none}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="side" aria-label="Choose mic and recording">
+    <div class="brandrow">
+      <svg class="ip-wave" viewBox="0 0 132 28" width="96" height="20" aria-hidden="true" fill="currentColor"><rect x="0" y="12" width="4" height="4" rx="1.5"/><rect x="6.4" y="10.5" width="4" height="7" rx="1.5"/><rect x="12.8" y="8.5" width="4" height="11" rx="1.5"/><rect x="19.2" y="6" width="4" height="16" rx="1.5"/><rect x="25.6" y="8" width="4" height="12" rx="1.5"/><rect x="32" y="4" width="4" height="20" rx="1.5"/><rect x="38.4" y="2" width="4" height="24" rx="1.5"/><rect x="44.8" y="5" width="4" height="18" rx="1.5"/><rect x="51.2" y="7" width="4" height="14" rx="1.5"/><rect x="57.6" y="3" width="4" height="22" rx="1.5"/><rect x="64" y="1" width="4" height="26" rx="1.5"/><rect x="70.4" y="3" width="4" height="22" rx="1.5"/><rect x="76.8" y="7" width="4" height="14" rx="1.5"/><rect x="83.2" y="5" width="4" height="18" rx="1.5"/><rect x="89.6" y="2" width="4" height="24" rx="1.5"/><rect x="96" y="4" width="4" height="20" rx="1.5"/><rect x="102.4" y="8" width="4" height="12" rx="1.5"/><rect x="108.8" y="6" width="4" height="16" rx="1.5"/><rect x="115.2" y="8.5" width="4" height="11" rx="1.5"/><rect x="121.6" y="10.5" width="4" height="7" rx="1.5"/><rect x="128" y="12" width="4" height="4" rx="1.5"/></svg>
+      <b>Vocal EQ Match</b>
+    </div>
+    <div class="side-group">
+      <p class="eyebrow">Step 1 · Mic</p>
+      <div class="seg seg-full" role="radiogroup" aria-label="Mic" id="mic-seg"></div>
+    </div>
+    <div class="side-group">
+      <p class="eyebrow">Step 2 · Recording</p>
+      <nav id="rec-list" aria-label="Recordings"></nav>
+    </div>
+    <div class="side-foot">
+      <span class="cap">Dashboard v<span class="app-ver"></span> · EQ format <span class="eq-ver"></span></span>
+      <span class="cap">IPHIPI Technologies</span>
+      <button class="btn btn-ghost btn-sm" id="open-owner" type="button">Owner tools</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">IPHIPI · Voice tuning</p>
+        <h1>Vocal EQ Match</h1>
+        <p class="sub">Move the sliders until the AI version sounds like your own mic recording, then save it with a name.</p>
+      </div>
+      <div class="top-actions">
+        <span class="who" id="who"></span>
+        <button class="btn btn-ghost" id="open-guide" type="button">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17h.01"/></svg>
+          How to use
+        </button>
+      </div>
+    </header>
+
+    <div class="notice span-12" id="banner-guide">
+      <p>New here? The one-minute guide explains every button in plain words.</p>
+      <div class="acts">
+        <button class="btn btn-primary btn-sm" id="banner-guide-open" type="button">Open the guide</button>
+        <button class="btn btn-ghost btn-sm" id="banner-guide-hide" type="button">Hide this</button>
+      </div>
+    </div>
+    <div class="notice warn span-12" id="banner-access" hidden><p id="banner-access-text"></p></div>
+
+    <section class="card span-12" aria-labelledby="player-title">
+      <div class="card-head">
+        <div>
+          <p class="eyebrow">Step 3 · Listen and compare</p>
+          <h2 class="card-title" id="player-title"><span id="p-rec"></span> <span class="chip chip-plain" id="p-mic"></span></h2>
+        </div>
+        <p class="keys"><kbd>Space</kbd> switch mic / AI &nbsp;·&nbsp; <kbd>P</kbd> play or pause</p>
+      </div>
+      <div class="player-row">
+        <button class="btn btn-primary btn-play" id="btn-play" type="button" disabled>
+          <svg id="ic-play" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round" aria-hidden="true"><path d="M7 5l12 7-12 7z"/></svg>
+          <svg id="ic-pause" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true" hidden><path d="M8 5v14M16 5v14"/></svg>
+          <span id="play-label">Play</span>
+        </button>
+        <span class="time" id="time">0:00 / 0:00</span>
+        <div class="seg seg-listen" role="radiogroup" aria-label="What you hear" id="listen-seg">
+          <button type="button" role="radio" data-listen="input" id="ls-input">Your mic<small>the target</small></button>
+          <button type="button" role="radio" data-listen="ai" id="ls-ai">AI + your EQ<small>what you are shaping</small></button>
+          <button type="button" role="radio" data-listen="orig" id="ls-orig">AI original<small>no EQ</small></button>
+        </div>
+      </div>
+      <div class="wave-wrap"><canvas id="wave" tabindex="0" role="slider" aria-label="Playback position" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"></canvas></div>
+      <div class="wave-foot">
+        <span class="cap" id="loop-hint">Tap the waveform to jump. Drag across it to repeat one part.</span>
+        <span class="loadstate" id="load-state" role="status"></span>
+        <button class="btn btn-ghost btn-sm" id="btn-loop-clear" type="button" hidden>Stop repeating</button>
+      </div>
+    </section>
+
+    <section class="card span-7" aria-labelledby="eq-title">
+      <div class="card-head">
+        <div>
+          <p class="eyebrow">Step 4 · Shape the AI sound</p>
+          <h2 class="card-title" id="eq-title">EQ for <span id="eq-mic"></span></h2>
+        </div>
+        <p class="applied" id="applied"></p>
+      </div>
+      <div class="scope">
+        <span class="cap">Changes apply to</span>
+        <div class="seg seg-full" role="radiogroup" aria-label="Changes apply to" id="scope-seg">
+          <button type="button" role="radio" data-scope="one" id="sc-one"></button>
+          <button type="button" role="radio" data-scope="all" id="sc-all"></button>
+        </div>
+      </div>
+      <div class="bands-scroll"><div class="bands" id="bands"></div></div>
+      <div class="level">
+        <label for="level">Level<small>volume of the AI version</small></label>
+        <input type="range" id="level" min="-12" max="12" step="0.1" value="0" aria-describedby="loud">
+        <output class="level-val" id="level-val" for="level">0.0 dB</output>
+      </div>
+      <div class="loud" id="loud"></div>
+      <div class="eq-actions">
+        <button class="btn btn-ghost" id="btn-match-level" type="button">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M4 9h16M4 15h16"/></svg>
+          Match loudness
+        </button>
+        <button class="btn btn-ghost" id="btn-suggest" type="button">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M6 6l2 2M16 16l2 2M6 18l2-2M16 8l2-2"/></svg>
+          Suggest a match
+        </button>
+        <button class="btn btn-ghost" id="btn-reset" type="button">Reset to 0</button>
+        <span class="spacer"></span>
+        <button class="btn btn-primary" id="btn-save" type="button">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></svg>
+          Save EQ
+        </button>
+      </div>
+    </section>
+
+    <section class="card span-5" aria-labelledby="pic-title">
+      <div class="card-head">
+        <div>
+          <p class="eyebrow">Match picture</p>
+          <h2 class="card-title" id="pic-title">How close is the AI to your mic?</h2>
+        </div>
+        <div class="score" id="score"></div>
+      </div>
+      <div class="chart-wrap" id="chart-wrap">
+        <svg id="chart" role="img" aria-label="Match picture"></svg>
+        <div class="tip" id="tip" hidden></div>
+      </div>
+      <p class="pic-note">The line shows where the AI is louder (above the middle) or quieter (below) than your mic. Aim to keep it inside the shaded band. Hover or tap the picture to see which slider to move.</p>
+    </section>
+
+    <section class="card span-12" aria-labelledby="saved-title">
+      <div class="card-head">
+        <div>
+          <p class="eyebrow">Step 5 · Saved EQs</p>
+          <h2 class="card-title" id="saved-title">Saved by everyone <span class="chip chip-accent" id="saved-count">0 saved</span></h2>
+        </div>
+      </div>
+      <div class="saved-tools">
+        <div class="left">
+          <div class="seg" role="radiogroup" aria-label="Show" id="filter-seg">
+            <button type="button" role="radio" data-filter="all" aria-checked="true">All</button>
+            <button type="button" role="radio" data-filter="flat">Flat mic</button>
+            <button type="button" role="radio" data-filter="podcast">Podcast mic</button>
+          </div>
+          <input class="input" id="saved-search" type="search" placeholder="Search by name" aria-label="Search saved EQs by name" autocomplete="off">
+        </div>
+        <div class="right">
+          <button class="btn btn-ghost btn-sm" id="dl-csv" type="button">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+            Spreadsheet (CSV)
+          </button>
+          <button class="btn btn-ghost btn-sm" id="dl-json" type="button">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+            For testing (JSON)
+          </button>
+        </div>
+      </div>
+      <div id="saved-body"></div>
+    </section>
+  </main>
+</div>
+
+<dialog id="dlg-save" aria-labelledby="save-h">
+  <form class="dlg" id="save-form" novalidate>
+    <h2 id="save-h">Save this EQ</h2>
+    <p id="save-desc"></p>
+    <div class="field">
+      <label for="eq-name">Name</label>
+      <input class="input" id="eq-name" maxlength="60" autocomplete="off" placeholder="For example: Flat mic warm v1" required>
+    </div>
+    <div class="field">
+      <label for="eq-by">Your name</label>
+      <input class="input" id="eq-by" maxlength="60" autocomplete="name" placeholder="Shown next to your EQ">
+    </div>
+    <div class="field">
+      <label for="eq-note">Note (optional)</label>
+      <textarea class="input" id="eq-note" maxlength="300" placeholder="What you changed or why"></textarea>
+    </div>
+    <div class="vals" id="save-vals"></div>
+    <p class="err" id="save-err" role="alert"></p>
+    <div class="dlg-acts">
+      <button class="btn btn-ghost" type="button" data-close>Cancel</button>
+      <button class="btn btn-ghost" type="button" id="save-download">Download EQ file</button>
+      <button class="btn btn-primary" type="submit" id="save-go">Save EQ</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-apply" aria-labelledby="apply-h">
+  <div class="dlg">
+    <h2 id="apply-h">Apply saved EQ</h2>
+    <p id="apply-desc"></p>
+    <div class="vals" id="apply-vals"></div>
+    <div class="choice">
+      <button class="btn btn-ghost" type="button" id="apply-one"></button>
+      <button class="btn btn-ghost" type="button" id="apply-all"></button>
+    </div>
+    <div class="dlg-acts"><button class="btn btn-ghost" type="button" data-close>Cancel</button></div>
+  </div>
+</dialog>
+
+<dialog id="dlg-delete" aria-labelledby="del-h">
+  <div class="dlg">
+    <h2 id="del-h">Delete saved EQ?</h2>
+    <p id="del-desc"></p>
+    <p class="err" id="del-err" role="alert"></p>
+    <div class="dlg-acts">
+      <button class="btn btn-ghost" type="button" data-close>Keep it</button>
+      <button class="btn btn-danger" type="button" id="del-go">Delete</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="dlg-copy" aria-labelledby="copy-h">
+  <div class="dlg">
+    <h2 id="copy-h">Copy this file</h2>
+    <p id="copy-desc">This browser blocked the download. Copy the text below and paste it into a new file.</p>
+    <textarea class="input" id="copy-text" readonly></textarea>
+    <div class="dlg-acts">
+      <button class="btn btn-ghost" type="button" data-close>Close</button>
+      <button class="btn btn-primary" type="button" id="copy-go">Copy text</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="dlg-owner" aria-labelledby="owner-h">
+  <form class="dlg" id="owner-form" novalidate>
+    <h2 id="owner-h">Owner tools</h2>
+    <p id="owner-state"></p>
+    <input class="input" id="owner-code" type="password" autocomplete="off" placeholder="Owner code" aria-label="Owner code">
+    <p class="err" id="owner-err" role="alert"></p>
+    <div class="dlg-acts">
+      <button class="btn btn-ghost" type="button" data-close>Close</button>
+      <button class="btn btn-ghost" type="button" id="owner-off">Turn off owner tools</button>
+      <button class="btn btn-primary" type="submit" id="owner-go">Unlock</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-guide" class="wide" aria-labelledby="guide-h">
+  <div class="dlg guide">
+    <h2 id="guide-h">How to use Vocal EQ Match</h2>
+    <p>The AI changed the sound of your recorded voice a little. Your job is to move the sliders until the AI version sounds like your own mic recording, then save the result with a name. There are no wrong answers. Trust your ears.</p>
+    <h3>Before you start</h3>
+    <ul>
+      <li>Use good headphones and a comfortable volume. Keep the volume the same the whole time.</li>
+    </ul>
+    <h3>Steps</h3>
+    <ol>
+      <li><b>Pick the mic</b> you recorded with: Flat mic or Podcast mic (left side, or top on a phone).</li>
+      <li><b>Pick a recording.</b> Start with <b>Raw singing</b>, marked Main.</li>
+      <li><b>Press Play.</b> Press the <b>Space bar</b> (or tap the buttons) to switch between <b>Your mic</b> and <b>AI + your EQ</b>. Both play at the same moment, so you hear only the difference.</li>
+      <li><b>Move a slider</b> up for more of that sound, down for less. Small moves of 1 to 3 dB are usually enough. Double-click a slider to put it back to 0.</li>
+      <li><b>Press Match loudness</b> so both versions play equally loud. A louder version always seems better, so this keeps the test fair.</li>
+      <li><b>Check the Match picture.</b> The flatter the line and the more it stays inside the shaded band, the closer the match.</li>
+      <li><b>Try the other recordings.</b> Choose <b>All 4 recordings</b> under “Changes apply to” to hear the same EQ on Baby cry, Crowd noise and White noise.</li>
+      <li><b>Press Save EQ</b>, type a name you will recognise (for example “Flat mic warm v1”) and your own name, then save. Each EQ name can be used only once.</li>
+    </ol>
+    <h3>What each slider does</h3>
+    <div class="tbl-wrap">
+      <table class="gtbl">
+        <thead><tr><th>Pitch</th><th>Name</th><th>What it changes</th></tr></thead>
+        <tbody id="guide-bands"></tbody>
+      </table>
+    </div>
+    <h3>Using a saved EQ</h3>
+    <ul>
+      <li>In <b>Saved by everyone</b>, press <b>Apply</b> next to an EQ and choose this recording only, or all 4 recordings on the mic.</li>
+      <li>You can apply saved EQs as many times as you like and keep adjusting. Save again under a new name to keep a new version.</li>
+      <li>You can delete EQs you saved from this browser. The dashboard owner can delete any of them.</li>
+    </ul>
+    <h3>Helpful buttons</h3>
+    <ul>
+      <li><b>AI original</b> plays the AI with no EQ, so you can hear what your sliders changed.</li>
+      <li><b>Suggest a match</b> sets the sliders to a computed starting point. Then fine-tune by ear.</li>
+      <li><b>Repeat one part:</b> drag across the waveform. Press <b>Stop repeating</b> to play the whole recording again.</li>
+      <li><b>Reset to 0</b> puts every slider and the level back to zero.</li>
+    </ul>
+    <h3>Good to know</h3>
+    <ul>
+      <li>Both versions play at the AI's sound quality (up to 8 kHz), so you only hear differences that the EQ can fix.</li>
+      <li>Your slider positions are remembered in this browser until you reset them.</li>
+      <li>Saving asks for your name, which is shown next to your EQ in the saved list. Everyone with the link sees the saved list.</li>
+      <li>Keyboard: <kbd>Space</kbd> switch · <kbd>P</kbd> play or pause · arrow keys move a selected slider by 0.5 dB.</li>
+    </ul>
+    <div class="dlg-acts"><button class="btn btn-primary" type="button" data-close>Got it</button></div>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="config.js"></script>
+<script>const DATA = {"fs":16000,"centers":[20.59,21.81,23.11,24.48,25.94,27.48,29.11,30.84,32.68,34.62,36.68,38.86,41.17,43.62,46.21,48.96,51.87,54.96,58.23,61.69,65.36,69.24,73.36,77.72,82.34,87.24,92.43,97.92,103.75,109.92,116.45,123.38,130.71,138.49,146.72,155.45,164.69,174.48,184.86,195.85,207.49,219.83,232.9,246.75,261.43,276.97,293.44,310.89,329.38,348.96,369.71,391.7,414.99,439.67,465.81,493.51,522.85,553.94,586.88,621.78,658.75,697.92,739.43,783.39,829.98,879.33,931.62,987.01,1045.71,1107.89,1173.77,1243.56,1317.51,1395.85,1478.85,1566.79,1659.95,1758.66,1863.24,1974.03,2091.41,2215.77,2347.53,2487.12,2635.01,2791.7,2957.7,3133.58,3319.91,3517.32,3726.47,3948.06,4182.82,4431.55,4695.06,4974.24,5270.03,5583.4,5915.41,6267.15,6639.82,7034.64,7452.94,7896.12,8062.99],"kw":[-12.884,-12.117,-11.372,-10.649,-9.951,-9.277,-8.63,-8.009,-7.416,-6.852,-6.316,-5.809,-5.332,-4.883,-4.462,-4.07,-3.705,-3.366,-3.052,-2.763,-2.498,-2.254,-2.031,-1.827,-1.641,-1.472,-1.319,-1.181,-1.055,-0.942,-0.839,-0.747,-0.664,-0.59,-0.523,-0.463,-0.409,-0.36,-0.317,-0.278,-0.243,-0.212,-0.184,-0.158,-0.135,-0.115,-0.096,-0.079,-0.063,-0.048,-0.034,-0.02,-0.006,0.008,0.023,0.039,0.056,0.076,0.1,0.127,0.16,0.199,0.247,0.304,0.373,0.455,0.553,0.669,0.803,0.958,1.131,1.324,1.532,1.752,1.979,2.208,2.433,2.648,2.849,3.032,3.197,3.341,3.465,3.571,3.66,3.734,3.795,3.844,3.884,3.917,3.943,3.964,3.981,3.994,4.004,4.013,4.019,4.025,4.029,4.032,4.034,4.036,4.038,4.039,4.04],"recs":[{"id":"singing","name":"Raw singing"},{"id":"baby","name":"Baby cry"},{"id":"crowd","name":"Crowd noise"},{"id":"white","name":"White noise"}],"mics":[{"id":"flat","name":"Flat mic"},{"id":"podcast","name":"Podcast mic"}],"items":{"singing_flat":{"dur":126.465,"inDb":[-93.47,-91.51,-89.82,-94.39,-90.74,-93.57,-92.84,-92.85,-93.48,-93.6,-93.6,-92.97,-90.54,-85.78,-92.61,-78.74,-94.22,-93.22,-93.67,-93.3,-88.13,-91.56,-89.67,-92.61,-91.41,-86.97,-83.86,-79.27,-74.81,-72.15,-67.24,-65.68,-63.9,-63.37,-63.21,-62.12,-61.68,-60.95,-58.71,-58.9,-55.0,-53.93,-53.16,-52.52,-51.64,-49.36,-51.12,-48.0,-53.1,-55.77,-52.77,-53.77,-52.28,-53.48,-51.96,-49.67,-49.49,-46.34,-43.8,-40.21,-45.11,-49.82,-46.17,-47.53,-47.15,-47.16,-42.27,-43.99,-49.37,-46.59,-47.52,-44.05,-45.08,-48.94,-45.4,-53.53,-55.04,-54.3,-57.83,-63.12,-64.81,-63.49,-60.49,-60.88,-63.93,-65.01,-63.66,-58.1,-52.59,-52.56,-56.89,-61.02,-62.67,-64.36,-65.65,-66.18,-65.27,-63.01,-65.48,-66.22,-68.06,-68.28,-68.9,-88.03,-200.0],"aiDb":[-102.61,-101.15,-98.71,-102.83,-99.56,-101.85,-100.56,-100.34,-100.61,-100.77,-101.4,-101.1,-98.65,-94.8,-98.79,-87.97,-101.19,-101.68,-101.1,-100.71,-97.52,-99.08,-97.24,-98.11,-93.81,-88.16,-84.45,-80.26,-75.32,-72.68,-67.74,-66.18,-64.32,-63.78,-63.6,-62.57,-62.09,-61.29,-59.0,-59.26,-55.43,-54.35,-53.58,-52.89,-51.8,-49.49,-51.3,-48.2,-53.47,-56.27,-53.31,-54.27,-52.65,-53.81,-52.25,-49.97,-49.8,-46.67,-44.11,-40.42,-45.43,-50.27,-46.59,-48.23,-47.67,-47.57,-42.61,-44.56,-49.77,-47.01,-48.08,-44.74,-45.93,-49.74,-46.09,-54.93,-55.94,-55.05,-58.61,-65.11,-66.13,-65.39,-62.09,-62.61,-66.45,-68.79,-66.46,-60.47,-55.04,-54.58,-58.55,-62.86,-64.87,-66.92,-68.11,-67.98,-66.74,-64.47,-67.06,-67.87,-69.22,-69.55,-70.11,-87.95,-200.0],"inLoud":-31.49,"aiLoud":-32.04,"suggest":[0.5,0.0,0.0,0.5,2.5,2.0,1.5],"peaks":[0.003,0.003,0.003,0.003,0.002,0.002,0.004,0.01,0.009,0.003,0.003,0.008,0.008,0.004,0.038,0.021,0.022,0.018,0.019,0.01,0.01,0.007,0.01,0.009,0.006,0.006,0.006,0.006,0.005,0.034,0.029,0.034,0.034,0.019,0.019,0.024,0.014,0.017,0.014,0.012,0.011,0.007,0.041,0.026,0.019,0.041,0.027,0.013,0.013,0.018,0.02,0.028,0.036,0.031,0.027,0.025,0.022,0.03,0.019,0.016,0.016,0.013,0.013,0.011,0.013,0.013,0.057,0.031,0.02,0.019,0.013,0.016,0.016,0.028,0.017,0.01,0.01,0.015,0.013,0.015,0.009,0.016,0.011,0.011,0.007,0.009,0.009,0.012,0.036,0.028,0.012,0.011,0.033,0.038,0.026,0.03,0.019,0.02,0.01,0.008,0.006,0.012,0.008,0.008,0.007,0.007,0.008,0.007,0.059,0.037,0.052,0.053,0.031,0.042,0.039,0.021,0.025,0.018,0.015,0.012,0.009,0.138,0.177,0.156,0.213,0.251,0.268,0.371,0.445,0.19,0.16,0.171,0.137,0.252,0.263,0.21,0.12,0.129,0.089,0.082,0.01,0.013,0.013,0.01,0.053,0.052,0.047,0.139,0.296,0.203,0.215,0.247,0.186,0.176,0.265,0.186,0.072,0.07,0.023,0.052,0.02,0.041,0.024,0.015,0.111,0.162,0.24,0.265,0.174,0.249,0.147,0.091,0.283,0.229,0.156,0.141,0.103,0.097,0.046,0.012,0.009,0.01,0.203,0.197,0.143,0.096,0.139,0.158,0.106,0.095,0.107,0.136,0.096,0.045,0.03,0.021,0.033,0.021,0.018,0.014,0.556,0.671,0.687,0.617,0.271,0.329,0.473,0.404,0.362,0.274,0.281,0.328,0.085,0.225,0.31,0.335,0.376,0.386,0.346,0.263,0.23,0.199,0.017,0.022,0.024,0.81,0.618,0.663,0.381,0.281,0.286,0.437,0.557,0.556,0.43,0.607,0.524,0.443,0.59,0.299,0.223,0.282,0.099,0.014,0.016,0.854,0.262,0.703,0.509,0.478,0.591,0.546,0.607,0.622,0.44,0.4,0.514,0.534,0.554,0.458,0.49,0.5,0.427,0.29,0.197,0.035,0.203,0.218,0.235,0.258,0.26,0.237,0.231,0.264,0.253,0.239,0.218,0.158,0.017,0.013,0.543,0.585,0.624,0.148,0.306,0.326,0.399,0.432,0.526,0.563,0.167,0.181,0.086,0.187,0.216,0.217,0.237,0.281,0.3,0.23,0.201,0.196,0.054,0.016,0.026,0.013,0.969,0.846,0.791,0.464,0.248,0.203,0.355,0.48,0.486,0.374,0.398,0.427,0.49,0.544,0.514,0.235,0.354,0.278,0.014,0.016,0.666,0.573,0.889,0.618,0.56,0.613,0.61,0.538,0.609,0.574,0.528,0.536,0.468,0.512,0.418,0.402,0.429,0.424,0.378,0.238,0.15,0.018,0.151,0.193,0.168,0.193,0.248,0.231,0.235,0.234,0.231,0.21,0.196,0.175,0.033,0.013,0.054,0.104,0.104,0.148,0.148,0.195,0.231,0.061,0.169,0.159,0.138,0.103,0.122,0.163,0.21,0.18,0.18,0.094,0.018,0.016,0.067,0.183,0.215,0.286,0.31,0.223,0.222,0.163,0.218,0.201,0.36,0.357,0.244,0.191,0.145,0.058,0.015,0.023,0.455,0.279,0.213,0.221,0.192,0.216,0.134,0.173,0.223,0.241,0.234,0.258,0.196,0.188,0.189,0.186,0.201,0.209,0.256,0.217,0.221,0.203,0.187,0.183,0.158,0.122,0.064,0.028,0.032,0.104,0.111,0.164,0.162,0.111,0.111,0.114,0.141,0.137,0.12,0.084,0.055,0.019,0.012,0.111,0.112,0.109,0.13,0.093,0.182,0.114,0.197,0.198,0.179,0.103,0.102,0.146,0.163,0.174,0.111,0.062,0.02,0.016,0.02,0.197,0.201,0.259,0.29,0.236,0.248,0.27,0.247,0.237,0.213,0.249,0.283,0.246,0.236,0.139,0.019,0.014,0.371,0.307,0.21,0.204,0.194,0.198,0.137,0.125,0.199,0.16,0.174,0.189,0.163,0.202,0.193,0.17,0.172,0.179,0.193,0.206,0.196,0.211,0.201,0.17,0.182,0.163,0.11,0.068,0.025,0.036,0.137,0.134,0.185,0.052,0.132,0.123,0.126,0.111,0.119,0.111,0.033,0.021,0.014,0.352,0.28,0.236,0.389,0.629,0.302,0.307,0.273,0.181,0.162,0.504,0.515,0.358,0.362,0.359,0.332,0.303,0.321,0.27,0.239,0.32,0.299,0.258,0.273,0.249,0.256,0.236,0.194,0.177,0.156,0.102,0.048,0.017,0.019,0.043,0.04,0.019,0.02,0.415,0.168,0.182,0.566,0.688,0.492,0.479,0.567,0.437,0.493,0.482,0.509,0.606,0.518,0.641,0.718,0.575,0.576,0.516,0.494,0.453,0.487,0.476,0.501,0.472,0.355,0.218,0.191,0.208,0.249,0.156,0.184,0.191,0.254,0.222,0.241,0.235,0.221,0.244,0.186,0.149,0.021,0.051,0.468,0.246,0.172,0.497,0.349,0.253,0.218,0.184,0.184,0.338,0.334,0.205,0.231,0.227,0.245,0.22,0.241,0.289,0.269,0.242,0.316,0.225,0.282,0.231,0.256,0.237,0.163,0.194,0.235,0.26,0.2,0.241,0.247,0.215,0.149,0.049,0.021,0.025,0.398,0.311,0.29,0.887,0.861,0.908,0.696,1.0,0.662,0.69,0.659,0.72,0.606,0.883,0.988,0.908,0.648,0.632,0.656,0.706,0.624,0.541,0.656,0.538,0.43,0.264,0.258,0.297,0.337,0.272,0.308,0.355,0.382,0.322,0.368,0.414,0.41,0.352,0.256,0.186,0.046,0.024,0.069,0.434,0.377,0.283,0.713,0.366,0.369,0.34,0.348,0.34,0.459,0.249,0.227,0.249,0.242,0.244,0.244,0.231,0.222,0.225,0.226,0.227,0.182,0.196,0.213,0.124,0.1,0.09,0.087,0.084,0.072,0.06,0.056,0.042,0.021,0.011,0.011,0.01,0.008,0.006,0.015,0.01,0.007,0.006,0.005,0.007,0.007,0.006,0.006,0.006,0.013,0.005,0.007,0.007,0.004,0.019,0.01,0.008,0.01,0.007,0.016,0.012,0.014,0.013,0.008,0.009,0.007,0.01,0.008,0.005,0.016,0.007,0.005,0.012,0.008,0.016,0.01,0.009,0.01,0.007,0.023,0.011,0.009,0.018,0.007,0.01,0.029,0.201,0.281,0.222,0.116,0.099,0.067,0.008,0.005,0.013,0.01,0.008,0.18,0.202,0.187,0.165,0.164,0.168,0.099,0.064,0.025,0.049,0.195,0.227,0.206,0.135,0.152,0.203,0.22,0.143,0.087,0.078,0.022,0.013,0.026,0.011,0.011,0.008,0.128,0.187,0.118,0.128,0.059,0.007,0.039,0.01,0.191,0.446,0.164,0.271,0.222,0.251,0.198,0.148,0.168,0.115,0.094,0.128,0.237,0.148,0.142,0.305,0.167,0.033,0.052,0.013,0.007,0.441,0.411,0.133,0.216,0.305,0.279,0.126,0.044,0.014,0.104,0.103,0.11,0.103,0.101,0.165,0.061,0.077,0.067,0.07,0.066,0.052,0.029,0.047,0.033,0.01,0.022,0.011,0.029,0.015,0.018,0.073,0.048,0.047,0.041,0.037,0.012,0.039,0.015,0.054,0.025,0.01,0.036,0.003,0.003,0.003,0.003,0.002,0.017,0.053,0.059,0.058,0.042,0.034,0.028,0.027,0.024,0.013,0.018,0.006,0.007,0.024,0.026,0.014]},"baby_flat":{"dur":62.28,"inDb":[-86.95,-87.82,-85.82,-88.68,-84.2,-85.55,-81.03,-79.67,-79.23,-77.85,-77.04,-76.42,-74.26,-75.41,-74.24,-74.41,-75.06,-75.73,-75.3,-76.29,-77.89,-78.1,-77.46,-77.88,-71.21,-71.4,-69.53,-71.43,-73.38,-71.81,-68.29,-67.24,-66.9,-63.41,-62.51,-61.46,-61.36,-60.93,-60.24,-58.1,-56.94,-57.67,-53.99,-57.86,-62.6,-59.64,-58.48,-55.91,-56.42,-56.95,-54.46,-49.47,-50.54,-52.78,-48.53,-46.69,-51.19,-54.4,-49.36,-48.47,-50.74,-52.14,-52.32,-50.17,-52.87,-55.12,-55.27,-51.88,-52.76,-53.6,-51.85,-52.02,-52.19,-53.29,-53.98,-54.04,-55.03,-58.07,-56.64,-59.14,-59.84,-62.06,-62.25,-63.8,-62.9,-59.97,-63.65,-61.99,-58.97,-57.25,-56.86,-56.83,-57.04,-58.13,-61.44,-63.25,-64.19,-63.03,-63.81,-63.41,-64.94,-67.24,-69.29,-89.47,-200.0],"aiDb":[-99.6,-97.23,-95.07,-99.92,-96.71,-98.92,-95.79,-97.45,-97.93,-97.84,-97.76,-96.46,-94.88,-91.64,-95.91,-96.82,-96.75,-96.98,-95.8,-95.95,-91.22,-91.99,-86.89,-82.94,-73.48,-72.83,-70.01,-71.85,-73.88,-72.31,-68.7,-67.61,-67.16,-63.6,-62.67,-61.67,-61.71,-61.27,-60.57,-58.45,-57.28,-57.99,-54.27,-58.13,-62.94,-59.95,-58.81,-56.2,-56.76,-57.39,-54.92,-49.97,-51.05,-53.25,-49.16,-47.17,-51.59,-55.0,-49.95,-48.92,-51.29,-52.87,-53.16,-50.91,-53.47,-55.87,-56.21,-52.95,-54.1,-56.77,-55.23,-54.03,-55.78,-54.42,-55.68,-54.79,-55.75,-58.93,-57.72,-60.8,-62.18,-63.2,-63.81,-65.73,-66.31,-67.93,-67.69,-64.62,-59.9,-58.0,-57.38,-57.36,-57.62,-58.75,-62.11,-65.41,-65.69,-64.41,-64.69,-64.53,-65.43,-67.84,-70.11,-88.43,-200.0],"inLoud":-35.93,"aiLoud":-36.87,"suggest":[0.5,0.0,0.5,1.0,3.0,0.5,1.0],"peaks":[0.074,0.083,0.064,0.023,0.005,0.002,0.003,0.003,0.003,0.009,0.007,0.008,0.014,0.015,0.013,0.017,0.015,0.017,0.028,0.018,0.023,0.035,0.073,0.022,0.014,0.182,0.297,0.236,0.129,0.109,0.129,0.221,0.274,0.158,0.167,0.221,0.272,0.363,0.395,0.587,0.525,0.09,0.043,0.193,0.285,0.209,0.188,0.142,0.117,0.354,0.119,0.121,0.187,0.29,0.241,0.071,0.205,0.218,0.195,0.142,0.15,0.076,0.083,0.085,0.073,0.047,0.025,0.018,0.02,0.012,0.013,0.021,0.017,0.013,0.01,0.009,0.005,0.017,0.04,0.161,0.148,0.125,0.07,0.086,0.057,0.059,0.057,0.079,0.081,0.058,0.064,0.07,0.038,0.072,0.064,0.016,0.048,0.024,0.017,0.022,0.022,0.025,0.034,0.047,0.092,0.115,0.095,0.062,0.107,0.065,0.03,0.037,0.042,0.019,0.009,0.006,0.026,0.018,0.022,0.026,0.025,0.091,0.115,0.166,0.147,0.245,0.26,0.265,0.295,0.374,0.476,0.276,0.248,0.169,0.109,0.094,0.022,0.033,0.03,0.035,0.403,0.713,0.05,0.496,0.489,0.187,0.327,0.021,0.129,0.276,0.028,0.163,0.062,0.03,0.118,0.006,0.01,0.02,0.024,0.022,0.029,0.016,0.013,0.165,0.177,0.115,0.145,0.15,0.122,0.162,0.158,0.131,0.099,0.088,0.027,0.009,0.004,0.003,0.007,0.013,0.037,0.037,0.048,0.051,0.065,0.03,0.02,0.007,0.015,0.016,0.005,0.005,0.004,0.003,0.025,0.02,0.093,0.217,0.136,0.162,0.39,0.388,0.191,0.202,0.115,0.034,0.01,0.006,0.004,0.003,0.003,0.005,0.014,0.114,0.422,0.723,0.409,0.29,0.105,0.267,0.323,0.122,0.342,0.225,0.178,0.065,0.055,0.018,0.014,0.015,0.01,0.025,0.016,0.029,0.047,0.015,0.025,0.011,0.184,0.35,0.301,0.397,0.286,0.539,0.312,0.397,0.434,0.166,0.008,0.016,0.008,0.007,0.004,0.008,0.009,0.005,0.004,0.003,0.004,0.036,0.022,0.008,0.015,0.017,0.03,0.035,0.028,0.021,0.016,0.015,0.296,0.245,0.256,0.58,0.527,0.146,0.363,0.306,0.316,0.092,0.4,0.389,0.274,0.237,0.241,0.231,0.227,0.163,0.072,0.091,0.028,0.023,0.034,0.011,0.028,0.039,0.027,0.047,0.05,0.023,0.007,0.007,0.15,0.242,0.108,0.081,0.268,0.129,0.308,0.247,0.128,0.342,0.386,0.451,0.296,0.263,0.217,0.373,0.157,0.114,0.296,0.219,0.294,0.178,0.258,0.246,0.139,0.082,0.012,0.037,0.064,0.092,0.081,0.09,0.102,0.107,0.053,0.062,0.083,0.094,0.434,0.173,0.052,0.02,0.017,0.028,0.345,0.4,0.136,1.0,0.764,0.371,0.371,0.237,0.34,0.36,0.349,0.223,0.239,0.158,0.084,0.035,0.027,0.026,0.028,0.043,0.045,0.032,0.022,0.012,0.006,0.016,0.007,0.003,0.01,0.653,0.822,0.664,0.403,0.347,0.217,0.388,0.383,0.336,0.232,0.012,0.016,0.018,0.023,0.346,0.398,0.269,0.109,0.259,0.301,0.258,0.301,0.314,0.201,0.157,0.308,0.282,0.223,0.188,0.084,0.018,0.022,0.011,0.004,0.008,0.042,0.033,0.03,0.038,0.035,0.063,0.029,0.027,0.021,0.021,0.017,0.014,0.004,0.005,0.007,0.009,0.009,0.053,0.06,0.011,0.008,0.005,0.059,0.085,0.107,0.116,0.068,0.034,0.027,0.02,0.021,0.027,0.066,0.071,0.11,0.126,0.121,0.125,0.074,0.047,0.052,0.066,0.085,0.079,0.057,0.059,0.069,0.067,0.063,0.022,0.018,0.01,0.003,0.003,0.005,0.004,0.003,0.031,0.015,0.004,0.003,0.002,0.01,0.021,0.039,0.094,0.247,0.321,0.481,0.451,0.839,0.803,0.547,0.405,0.959,0.746,0.49,0.117,0.044,0.033,0.019,0.023,0.021,0.02,0.01,0.009,0.034,0.028,0.011,0.004,0.002,0.002,0.005,0.014,0.003,0.002,0.006,0.003,0.004,0.003,0.003,0.088,0.056,0.005,0.01,0.002,0.002,0.003,0.003,0.002,0.002,0.009,0.003,0.006,0.003,0.003,0.003,0.003,0.003,0.009,0.015,0.014,0.005,0.005,0.003,0.017,0.409,0.352,0.405,0.616,0.665,0.529,0.481,0.659,0.371,0.601,0.553,0.602,0.577,0.631,0.564,0.555,0.686,0.532,0.403,0.374,0.138,0.394,0.316,0.225,0.023,0.019,0.034,0.079,0.142,0.138,0.142,0.109,0.161,0.132,0.122,0.081,0.07,0.091,0.053,0.246,0.354,0.407,0.563,0.563,0.456,0.465,0.393,0.36,0.44,0.439,0.232,0.025,0.146,0.15,0.189,0.236,0.163,0.1,0.05,0.054,0.048,0.04,0.076,0.074,0.05,0.038,0.019,0.087,0.168,0.194,0.569,0.375,0.592,0.491,0.442,0.153,0.291,0.267,0.369,0.363,0.552,0.275,0.252,0.274,0.229,0.31,0.35,0.342,0.296,0.215,0.281,0.115,0.055,0.065,0.09,0.058,0.1,0.081,0.051,0.048,0.032,0.016,0.031,0.04,0.012,0.003,0.15,0.209,0.219,0.448,0.217,0.197,0.252,0.281,0.245,0.382,0.26,0.235,0.251,0.202,0.123,0.087,0.026,0.108,0.081,0.139,0.064,0.005,0.007,0.099,0.128,0.173,0.213,0.149,0.079,0.098,0.046,0.043,0.037,0.021,0.019,0.023,0.025,0.064,0.042,0.014,0.003,0.024,0.075,0.097,0.082,0.09,0.121,0.337,0.502,0.311,0.949,0.872,0.809,0.715,0.66,0.195,0.01,0.006,0.069,0.036,0.004,0.004,0.003,0.06,0.037,0.108,0.087,0.131,0.158,0.163,0.118,0.048,0.012,0.018,0.029,0.01,0.008,0.014,0.013,0.072,0.092,0.034,0.026,0.041,0.039,0.019,0.252,0.209,0.243,0.21,0.072,0.031,0.011,0.01,0.003,0.003,0.006,0.137,0.151,0.261,0.148,0.296,0.158,0.279,0.245,0.246,0.232,0.13,0.299,0.334,0.168,0.164,0.06,0.043,0.046,0.04,0.067,0.046,0.351,0.336,0.168,0.158,0.174,0.125,0.032,0.117,0.067,0.003,0.002,0.002,0.002,0.002,0.002,0.002,0.049,0.073,0.181,0.151,0.061,0.005,0.002,0.005,0.104,0.06,0.002,0.003,0.002,0.002,0.002,0.002,0.003,0.003,0.002,0.003,0.002,0.002,0.002,0.014,0.059,0.043,0.063,0.066,0.037,0.032,0.013,0.003,0.003,0.002,0.002,0.008,0.003,0.003,0.003,0.003,0.003,0.004,0.003,0.004,0.005,0.004,0.003,0.003,0.004,0.003,0.003,0.004,0.003,0.003,0.003,0.003,0.002,0.004,0.009,0.012,0.003,0.003,0.002,0.003,0.002,0.003,0.002,0.002,0.002,0.002,0.002,0.002,0.002,0.002,0.003,0.003,0.002,0.002,0.003,0.003,0.002,0.002,0.002,0.002,0.003,0.003,0.002,0.002,0.003,0.002,0.002,0.002,0.003,0.002,0.002,0.002,0.002,0.002,0.002,0.002,0.002,0.002,0.002,0.003,0.002,0.002,0.002,0.002,0.002,0.002,0.002,0.002,0.002,0.002,0.002,0.002,0.002,0.002,0.001,0.002,0.002,0.002,0.002,0.004]},"crowd_flat":{"dur":99.585,"inDb":[-84.25,-83.49,-81.68,-85.85,-81.66,-85.03,-82.34,-83.34,-83.06,-82.21,-84.66,-82.7,-77.22,-71.4,-78.43,-71.59,-73.14,-72.99,-68.59,-72.29,-66.3,-67.52,-58.82,-73.02,-76.1,-74.02,-72.24,-64.42,-61.3,-59.28,-57.0,-54.73,-56.58,-54.43,-53.87,-55.22,-53.04,-52.05,-51.3,-53.0,-55.16,-54.84,-55.01,-52.79,-52.6,-50.16,-48.95,-47.94,-46.66,-47.26,-44.17,-43.95,-46.56,-45.29,-45.99,-45.84,-44.29,-44.55,-43.68,-45.03,-44.03,-45.17,-44.67,-44.2,-46.98,-49.63,-51.59,-48.34,-47.06,-46.69,-48.01,-50.47,-49.51,-50.54,-52.66,-54.16,-55.12,-56.56,-60.44,-59.54,-60.38,-59.76,-59.36,-61.83,-65.46,-65.33,-63.81,-59.03,-57.62,-54.28,-54.65,-56.84,-59.34,-60.73,-61.98,-63.26,-63.69,-64.2,-65.13,-65.38,-65.58,-65.93,-66.77,-86.68,-200.0],"aiDb":[-102.88,-101.61,-98.21,-101.86,-98.33,-101.97,-100.15,-99.12,-98.84,-98.71,-98.37,-98.57,-94.78,-95.44,-95.5,-94.93,-95.21,-93.9,-93.6,-93.61,-91.48,-90.58,-84.27,-89.47,-87.65,-85.25,-80.55,-75.81,-71.07,-67.38,-64.69,-61.6,-59.86,-56.38,-56.19,-57.37,-55.21,-55.11,-54.05,-55.1,-57.89,-57.74,-58.56,-56.43,-55.43,-51.82,-51.41,-50.09,-49.9,-49.4,-46.21,-46.64,-48.66,-47.63,-49.31,-48.37,-47.0,-46.64,-45.71,-47.12,-45.81,-47.28,-46.96,-46.39,-50.18,-51.3,-53.06,-49.6,-48.26,-47.83,-49.27,-51.49,-50.9,-51.57,-54.31,-55.46,-57.18,-58.2,-62.03,-62.27,-62.79,-61.0,-61.05,-64.0,-66.71,-66.67,-64.6,-59.51,-58.15,-54.75,-55.11,-57.32,-59.77,-61.15,-62.31,-63.57,-64.02,-64.66,-65.64,-65.9,-66.0,-66.43,-67.46,-85.46,-200.0],"inLoud":-31.29,"aiLoud":-33.31,"suggest":[4.0,1.0,1.5,1.0,1.0,0.0,1.0],"peaks":[0.019,0.02,0.023,0.022,0.025,0.022,0.021,0.029,0.026,0.022,0.027,0.027,0.028,0.023,0.03,0.026,0.024,0.021,0.023,0.028,0.032,0.136,0.127,0.415,0.271,0.132,0.221,0.141,0.089,0.091,0.022,0.02,0.022,0.017,0.017,0.019,0.017,0.028,0.037,0.028,0.02,0.021,0.069,0.099,0.123,0.167,0.178,0.15,0.103,0.09,0.134,0.083,0.047,0.03,0.026,0.021,0.031,0.028,0.027,0.022,0.03,0.027,0.14,0.192,0.16,0.127,0.127,0.098,0.074,0.211,0.159,0.124,0.138,0.129,0.117,0.077,0.028,0.018,0.023,0.018,0.017,0.018,0.016,0.026,0.037,0.03,0.029,0.025,0.032,0.042,0.043,0.037,0.134,0.09,0.146,0.218,0.165,0.188,0.156,0.111,0.094,0.023,0.028,0.028,0.024,0.026,0.03,0.027,0.026,0.022,0.024,0.019,0.028,0.031,0.022,0.024,0.018,0.022,0.022,0.018,0.018,0.024,0.033,0.019,0.022,0.083,0.239,0.252,0.212,0.187,0.183,0.14,0.141,0.089,0.08,0.056,0.066,0.071,0.033,0.025,0.023,0.02,0.045,0.04,0.056,0.058,0.072,0.076,0.054,0.04,0.021,0.034,0.03,0.027,0.025,0.022,0.023,0.02,0.029,0.031,0.022,0.023,0.02,0.023,0.022,0.017,0.018,0.025,0.033,0.019,0.019,0.022,0.017,0.021,0.014,0.024,0.035,0.028,0.028,0.019,0.024,0.04,0.046,0.029,0.02,0.022,0.025,0.022,0.082,0.171,0.115,0.161,0.104,0.215,0.208,0.307,0.313,0.07,0.022,0.031,0.027,0.021,0.023,0.022,0.028,0.031,0.021,0.023,0.022,0.021,0.022,0.02,0.028,0.025,0.032,0.025,0.02,0.026,0.016,0.019,0.016,0.022,0.038,0.036,0.029,0.018,0.022,0.062,0.095,0.123,0.114,0.055,0.037,0.022,0.019,0.028,0.022,0.028,0.157,0.366,0.158,0.124,0.223,0.231,0.178,0.137,0.028,0.021,0.023,0.023,0.031,0.029,0.031,0.025,0.038,0.215,0.15,0.139,0.117,0.169,0.149,0.13,0.198,0.161,0.107,0.143,0.085,0.068,0.059,0.042,0.029,0.015,0.012,0.001,0.001,0.001,0.002,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.002,0.001,0.016,0.007,0.012,0.006,0.001,0.001,0.001,0.003,0.002,0.002,0.001,0.001,0.001,0.001,0.002,0.002,0.001,0.001,0.001,0.002,0.002,0.001,0.002,0.029,0.043,0.042,0.038,0.038,0.051,0.04,0.054,0.046,0.04,0.049,0.052,0.043,0.041,0.054,0.043,0.043,0.038,0.223,0.243,0.471,0.244,0.217,0.268,0.328,0.377,0.425,0.213,0.032,0.041,0.059,0.033,0.038,0.044,0.033,0.033,0.028,0.065,0.253,0.229,0.45,0.33,0.187,0.249,0.177,0.275,0.263,0.039,0.042,0.037,0.033,0.046,0.042,0.056,0.045,0.044,0.049,0.05,0.037,0.044,0.055,0.049,0.044,0.041,0.04,0.036,0.05,0.054,0.041,0.047,0.036,0.038,0.038,0.031,0.127,0.395,0.579,0.2,0.206,0.22,0.232,0.157,0.169,0.276,0.225,0.291,0.122,0.101,0.123,0.111,0.155,0.136,0.126,0.09,0.098,0.145,0.078,0.053,0.038,0.049,0.055,0.042,0.05,0.052,0.046,0.048,0.043,0.059,0.044,0.041,0.047,0.074,0.082,0.151,0.157,0.138,0.167,0.102,0.078,0.074,0.037,0.042,0.057,0.038,0.04,0.067,0.152,0.261,0.364,0.359,0.278,0.293,0.32,0.164,0.044,0.073,0.093,0.083,0.051,0.038,0.043,0.041,0.076,0.364,0.172,0.524,0.476,0.089,0.05,0.058,0.049,0.044,0.044,0.05,0.05,0.044,0.048,0.041,0.059,0.08,0.274,0.212,0.234,0.328,0.404,0.051,0.096,0.231,0.307,0.12,0.117,0.172,0.043,0.036,0.029,0.036,0.059,0.215,0.225,0.117,0.224,0.124,0.099,0.106,0.132,0.157,0.068,0.062,0.083,0.055,0.052,0.109,0.165,0.081,0.243,0.231,0.113,0.095,0.14,0.364,0.114,0.139,0.052,0.045,0.058,0.058,0.057,0.041,0.058,0.111,0.201,0.282,0.301,0.196,0.056,0.133,0.22,0.256,0.155,0.199,0.274,0.091,0.127,0.099,0.235,0.279,0.087,0.156,0.207,0.117,0.088,0.032,0.044,0.045,0.048,0.062,0.056,0.048,0.051,0.047,0.04,0.06,0.055,0.04,0.041,0.05,0.041,0.044,0.042,0.044,0.057,0.046,0.061,0.042,0.044,0.04,0.035,0.034,0.033,0.039,0.116,0.101,0.065,0.051,0.029,0.03,0.034,0.032,0.047,0.072,0.052,0.056,0.058,0.058,0.027,0.001,0.002,0.002,0.002,0.001,0.001,0.001,0.002,0.002,0.002,0.002,0.016,0.003,0.008,0.008,0.018,0.019,0.014,0.015,0.018,0.002,0.001,0.005,0.005,0.001,0.002,0.003,0.001,0.001,0.001,0.001,0.001,0.063,0.066,0.075,0.061,0.085,0.083,0.086,0.088,0.077,0.091,0.088,0.083,0.114,0.104,0.11,0.092,0.101,0.123,0.092,0.1,0.127,0.089,0.082,0.07,0.065,0.065,0.063,0.054,0.07,0.102,0.071,0.054,0.075,0.042,0.062,0.055,0.063,0.115,0.136,0.208,0.177,0.145,0.127,0.148,0.217,0.247,0.153,0.123,0.086,0.143,0.113,0.125,0.197,0.094,0.156,0.095,0.116,0.125,0.166,0.187,0.174,0.165,0.168,0.152,0.089,0.086,0.096,0.095,0.08,0.065,0.066,0.056,0.062,0.177,0.203,0.145,0.074,0.059,0.08,0.107,0.144,0.14,0.168,0.083,0.119,0.093,0.061,0.067,0.094,0.178,0.145,0.129,0.119,0.132,0.087,0.072,0.086,0.089,0.12,0.14,0.103,0.074,0.092,0.085,0.107,0.117,0.143,0.109,0.093,0.074,0.072,0.094,0.078,0.109,0.094,0.109,0.13,0.098,0.08,0.075,0.091,0.128,0.084,0.066,0.076,0.048,0.06,0.058,0.063,0.08,0.114,0.098,0.076,0.145,0.157,0.217,0.166,0.175,0.114,0.137,0.117,0.199,0.15,0.117,0.107,0.111,0.136,0.127,0.11,0.097,0.09,0.072,0.089,0.078,0.079,0.072,0.071,0.093,0.186,0.21,0.263,0.205,0.18,0.155,0.061,0.059,0.052,0.097,0.073,0.063,0.078,0.054,0.055,0.058,0.053,0.34,0.206,0.372,0.349,0.329,0.588,0.148,0.49,0.41,0.516,0.562,0.253,0.35,0.271,0.103,0.084,0.09,0.093,0.086,0.091,0.105,0.074,0.082,0.168,0.47,0.562,0.482,0.405,0.561,0.48,0.354,0.376,0.356,0.374,0.267,0.339,0.519,0.478,0.264,0.283,0.267,0.208,0.166,0.344,0.301,0.267,0.131,0.135,0.1,0.106,0.071,0.09,0.152,0.153,0.118,0.075,0.307,0.147,0.32,0.333,0.24,0.237,0.188,0.199,0.095,0.098,0.111,0.11,0.813,0.763,1.0,0.132,0.078,0.089,0.079,0.11,0.118,0.079,0.08,0.074,0.071,0.068,0.067,0.066,0.081,0.114,0.075,0.079,0.1,0.05,0.056,0.052,0.075,0.114,0.123,0.463,0.49,0.27,0.151,0.034,0.023,0.011,0.009,0.007,0.002,0.002,0.017]},"white_flat":{"dur":134.07,"inDb":[-93.36,-91.88,-90.32,-93.33,-89.93,-92.2,-89.89,-90.35,-89.29,-85.6,-83.27,-80.42,-73.95,-72.86,-69.92,-68.81,-68.76,-69.25,-67.75,-67.52,-68.02,-65.74,-68.05,-73.93,-74.51,-74.85,-71.98,-68.07,-66.99,-64.83,-63.02,-62.65,-63.04,-61.27,-60.49,-60.47,-58.27,-56.9,-58.58,-60.61,-60.73,-60.55,-60.69,-60.75,-61.2,-60.32,-58.31,-56.31,-54.88,-53.36,-52.68,-51.64,-52.99,-55.32,-55.76,-54.22,-55.11,-54.03,-52.2,-51.27,-51.96,-54.36,-53.61,-55.12,-55.83,-58.66,-59.4,-56.61,-57.25,-57.12,-55.37,-54.93,-56.23,-58.22,-57.1,-58.64,-58.52,-59.73,-62.39,-60.15,-59.37,-62.57,-60.3,-62.53,-63.95,-61.15,-63.56,-60.88,-63.9,-61.63,-61.74,-60.47,-62.71,-62.11,-64.01,-61.33,-60.98,-61.09,-60.77,-60.69,-59.98,-58.83,-60.79,-80.79,-200.0],"aiDb":[-106.78,-106.06,-103.0,-107.01,-104.03,-106.5,-103.8,-102.84,-102.09,-100.63,-99.9,-99.02,-94.15,-93.75,-91.04,-89.02,-90.77,-91.55,-90.07,-90.7,-91.1,-86.98,-87.92,-90.31,-85.11,-80.15,-75.15,-71.53,-71.28,-67.41,-65.45,-64.96,-64.63,-62.31,-61.81,-61.95,-59.62,-58.53,-60.38,-62.04,-62.19,-62.06,-62.35,-63.06,-62.64,-61.2,-59.49,-57.6,-56.33,-54.6,-53.66,-52.85,-53.96,-56.46,-57.32,-55.19,-56.22,-55.09,-53.1,-52.2,-52.95,-55.72,-55.65,-58.9,-58.97,-61.18,-61.53,-58.41,-59.06,-59.45,-57.8,-56.74,-59.75,-61.32,-63.41,-63.8,-65.65,-67.17,-68.15,-70.21,-70.45,-70.3,-70.94,-72.59,-77.59,-80.94,-79.6,-76.48,-70.69,-65.73,-65.46,-66.66,-70.33,-73.59,-78.32,-77.45,-76.11,-75.12,-75.71,-75.95,-74.76,-75.17,-76.9,-98.96,-200.0],"inLoud":-38.3,"aiLoud":-41.15,"suggest":[2.0,0.5,0.0,3.5,11.5,12.0,12.0],"peaks":[0.036,0.046,0.032,0.036,0.046,0.036,0.034,0.036,0.037,0.036,0.038,0.037,0.039,0.034,0.036,0.033,0.042,0.036,0.15,0.217,0.284,0.231,0.231,0.114,0.343,0.189,0.221,0.217,0.133,0.04,0.033,0.044,0.036,0.041,0.035,0.04,0.036,0.036,0.036,0.363,0.438,0.184,0.253,0.171,0.137,0.032,0.042,0.038,0.032,0.042,0.056,0.401,0.502,0.294,0.324,0.434,0.39,0.257,0.524,0.431,0.175,0.128,0.045,0.035,0.038,0.036,0.041,0.038,0.059,0.097,0.16,0.149,0.197,0.158,0.031,0.034,0.041,0.034,0.034,0.111,0.092,0.227,0.249,0.192,0.121,0.055,0.057,0.038,0.04,0.036,0.036,0.036,0.032,0.035,0.037,0.032,0.386,0.492,0.309,0.306,0.212,0.649,0.319,0.239,0.151,0.196,0.178,0.065,0.031,0.042,0.032,0.035,0.043,0.041,0.038,0.033,0.033,0.032,0.04,0.042,0.036,0.034,0.041,0.031,0.035,0.037,0.034,0.032,0.037,0.04,0.038,0.037,0.042,0.032,0.041,0.037,0.038,0.031,0.031,0.294,0.26,0.039,0.066,0.056,0.041,0.042,0.065,0.059,0.05,0.053,0.035,0.038,0.086,0.152,0.228,0.209,0.153,0.045,0.041,0.04,0.04,0.044,0.042,0.044,0.041,0.046,0.037,0.033,0.033,0.033,0.033,0.033,0.266,0.266,0.278,0.266,0.381,0.315,0.225,0.263,0.039,0.044,0.042,0.032,0.035,0.034,0.035,0.478,1.0,0.949,0.303,0.506,0.295,0.521,0.375,0.372,0.085,0.037,0.041,0.039,0.034,0.036,0.112,0.178,0.165,0.115,0.101,0.089,0.07,0.04,0.006,0.005,0.004,0.004,0.004,0.004,0.004,0.004,0.004,0.004,0.004,0.005,0.036,0.066,0.073,0.051,0.045,0.035,0.032,0.016,0.007,0.072,0.063,0.072,0.058,0.067,0.079,0.061,0.061,0.072,0.066,0.056,0.07,0.072,0.065,0.06,0.06,0.055,0.066,0.061,0.059,0.062,0.061,0.063,0.061,0.053,0.066,0.058,0.058,0.061,0.06,0.057,0.078,0.059,0.073,0.066,0.067,0.061,0.058,0.067,0.061,0.098,0.197,0.218,0.073,0.058,0.061,0.061,0.064,0.06,0.064,0.061,0.072,0.202,0.329,0.314,0.296,0.169,0.253,0.509,0.086,0.06,0.058,0.066,0.058,0.073,0.228,0.278,0.157,0.084,0.067,0.06,0.06,0.073,0.068,0.067,0.062,0.062,0.061,0.069,0.065,0.205,0.199,0.355,0.586,0.59,0.153,0.325,0.27,0.302,0.26,0.195,0.183,0.058,0.056,0.056,0.073,0.061,0.053,0.065,0.065,0.066,0.066,0.058,0.061,0.059,0.065,0.063,0.19,0.32,0.231,0.204,0.108,0.072,0.06,0.255,0.37,0.205,0.226,0.086,0.071,0.059,0.055,0.078,0.067,0.06,0.062,0.056,0.061,0.061,0.249,0.241,0.274,0.249,0.262,0.236,0.173,0.14,0.18,0.205,0.155,0.101,0.083,0.08,0.087,0.062,0.059,0.056,0.057,0.066,0.064,0.063,0.058,0.062,0.068,0.06,0.073,0.303,0.504,0.664,0.619,0.794,0.476,0.448,0.376,0.149,0.065,0.058,0.14,0.411,0.478,0.378,0.347,0.264,0.34,0.784,0.067,0.243,0.304,0.314,0.262,0.308,0.191,0.399,0.429,0.198,0.058,0.063,0.079,0.149,0.111,0.066,0.073,0.069,0.071,0.068,0.063,0.063,0.067,0.082,0.065,0.063,0.063,0.304,0.326,0.054,0.007,0.004,0.021,0.115,0.119,0.164,0.098,0.115,0.108,0.067,0.073,0.081,0.081,0.043,0.025,0.011,0.083,0.105,0.147,0.113,0.12,0.119,0.136,0.135,0.195,0.206,0.234,0.235,0.205,0.247,0.235,0.258,0.299,0.187,0.122,0.107,0.106,0.107,0.097,0.119,0.116,0.138,0.483,0.691,0.465,0.408,0.248,0.381,0.5,0.375,0.161,0.195,0.195,0.215,0.276,0.296,0.127,0.111,0.185,0.297,0.248,0.204,0.213,0.305,0.134,0.16,0.139,0.123,0.138,0.149,0.108,0.115,0.113,0.108,0.106,0.151,0.298,0.995,0.762,0.258,0.382,0.24,0.197,0.207,0.174,0.119,0.115,0.139,0.123,0.114,0.124,0.113,0.118,0.105,0.145,0.114,0.125,0.109,0.097,0.123,0.12,0.117,0.118,0.244,0.338,0.277,0.184,0.124,0.12,0.115,0.129,0.12,0.663,0.599,0.355,0.602,0.493,0.207,0.104,0.105,0.116,0.109,0.127,0.104,0.108,0.101,0.099,0.1,0.123,0.113,0.11,0.111,0.117,0.102,0.588,0.548,0.556,0.699,0.732,0.633,0.657,0.66,0.362,0.278,0.258,0.154,0.109,0.106,0.093,0.104,0.104,0.115,0.109,0.106,0.406,0.588,0.487,0.589,0.492,0.53,0.125,0.1,0.102,0.121,0.817,0.685,0.977,0.834,0.438,0.255,0.103,0.114,0.11,0.116,0.104,0.134,0.102,0.111,0.186,0.122,0.139,0.119,0.113,0.099,0.105,0.123,0.116,0.131,0.105,0.114,0.102,0.101,0.219,0.319,0.24,0.191,0.142,0.161,0.165,0.163,0.147,0.126,0.129,0.122,0.148,0.142,0.18,0.143,0.136,0.129,0.145,0.156,0.178,0.175,0.214,0.228,0.202,0.189,0.21,0.22,0.196,0.218,0.23,0.221,0.26,0.172,0.065,0.004,0.004,0.004,0.003,0.004,0.004,0.004,0.004,0.104,0.117,0.115,0.126,0.13,0.153,0.115,0.102,0.029,0.003,0.004,0.004,0.004,0.004,0.104,0.099,0.077,0.072,0.066,0.21,0.192,0.182,0.214,0.221,0.215,0.196,0.174,0.262,0.34,0.423,0.437,0.401,0.476,0.388,0.366,0.369,0.312,0.314,0.227,0.195,0.202,0.235,0.316,0.376,0.384,0.395,0.351,0.324,0.194,0.184,0.244,0.216,0.26,0.286,0.281,0.303,0.299,0.295,0.305,0.278,0.278,0.206,0.187,0.202,0.236,0.193,0.198,0.207,0.201,0.185,0.18,0.2,0.189,0.258,0.266,0.291,0.223,0.275,0.217,0.226,0.252,0.226,0.236,0.241,0.215,0.21,0.21,0.313,0.331,0.348,0.277,0.262,0.229,0.22,0.173,0.209,0.179,0.195,0.197,0.221,0.183,0.217,0.196,0.19,0.207,0.22,0.229,0.362,0.639,0.534,0.422,0.43,0.548,0.537,0.321,0.464,0.617,0.769,0.184,0.221,0.24,0.314,0.367,0.264,0.368,0.312,0.269,0.238,0.219,0.192,0.205,0.219,0.192,0.461,0.665,0.595,0.26,0.534,0.424,0.569,0.54,0.325,0.594,0.195,0.5,0.769,0.196,0.227,0.21,0.188,0.21,0.228,0.177,0.671,0.369,0.62,0.454,0.353,0.34,0.531,0.482,0.366,0.477,0.302,0.302,0.236,0.183,0.209,0.226,0.206,0.189,0.207,0.204,0.198,0.212,0.19,0.189,0.22,0.199,0.186,0.2,0.18,0.212,0.246,0.178,0.197,0.178,0.196,0.178,0.203,0.215,0.171,0.215,0.182,0.299,0.564,0.228,0.184,0.238,0.197,0.203,0.217,0.192,0.219,0.195,0.213,0.18,0.199,0.405,0.365,0.316,0.303,0.199,0.196,0.187,0.199,0.189,0.226,0.182,0.226,0.212,0.011,0.011,0.004,0.004,0.004,0.004,0.004,0.004]},"singing_podcast":{"dur":126.465,"inDb":[-67.19,-68.92,-67.13,-70.67,-68.15,-72.52,-71.38,-72.02,-72.0,-73.23,-74.57,-74.49,-72.97,-77.18,-74.93,-73.79,-78.44,-78.43,-78.8,-79.45,-81.72,-81.47,-80.99,-82.25,-80.54,-76.59,-73.98,-70.65,-66.39,-62.61,-58.3,-56.47,-55.25,-54.09,-53.82,-53.48,-53.1,-52.91,-49.7,-48.69,-45.75,-45.36,-44.92,-44.92,-43.48,-41.39,-44.31,-41.77,-46.05,-49.28,-46.94,-48.0,-45.91,-46.78,-45.28,-44.64,-43.17,-40.01,-39.43,-35.8,-40.38,-45.27,-43.81,-44.08,-43.16,-44.28,-40.45,-42.03,-46.61,-43.97,-44.17,-41.06,-42.26,-45.7,-44.5,-50.78,-52.33,-52.62,-55.39,-59.46,-58.54,-58.57,-56.33,-56.59,-59.26,-60.75,-60.86,-55.79,-49.84,-48.68,-52.77,-57.49,-60.12,-61.24,-62.63,-63.2,-62.15,-60.74,-62.61,-63.84,-66.37,-65.62,-64.61,-82.96,-200.0],"aiDb":[-75.56,-77.1,-74.96,-78.27,-75.57,-78.94,-77.67,-78.19,-77.45,-77.91,-79.76,-79.89,-77.53,-81.46,-78.82,-77.29,-81.74,-80.98,-82.35,-82.66,-85.1,-84.42,-83.88,-84.87,-81.9,-77.5,-74.42,-71.03,-66.65,-62.83,-58.51,-56.65,-55.43,-54.26,-53.93,-53.57,-53.18,-53.01,-49.77,-48.79,-45.9,-45.52,-45.01,-45.01,-43.5,-41.44,-44.36,-41.8,-46.22,-49.58,-47.28,-48.32,-46.13,-46.93,-45.46,-44.79,-43.37,-40.25,-39.65,-36.03,-40.69,-45.65,-44.17,-44.8,-43.53,-44.58,-40.67,-42.49,-46.91,-44.31,-44.67,-41.61,-43.01,-46.4,-45.22,-51.63,-52.93,-53.15,-55.9,-60.76,-59.22,-59.41,-57.12,-57.41,-60.36,-62.92,-62.87,-57.13,-51.14,-49.74,-53.65,-58.42,-61.14,-62.36,-63.66,-64.17,-62.9,-61.49,-63.63,-65.01,-67.43,-66.57,-65.52,-82.15,-200.0],"inLoud":-27.35,"aiLoud":-27.69,"suggest":[0.0,0.0,0.0,0.5,1.5,1.0,1.5],"peaks":[0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.003,0.003,0.001,0.001,0.003,0.003,0.002,0.014,0.008,0.007,0.007,0.007,0.006,0.007,0.004,0.004,0.003,0.003,0.002,0.002,0.002,0.002,0.015,0.011,0.015,0.009,0.008,0.006,0.011,0.005,0.007,0.006,0.005,0.004,0.003,0.019,0.009,0.006,0.015,0.008,0.004,0.006,0.007,0.009,0.013,0.016,0.014,0.011,0.011,0.009,0.016,0.009,0.008,0.006,0.006,0.007,0.006,0.007,0.007,0.039,0.017,0.009,0.007,0.006,0.005,0.01,0.022,0.009,0.003,0.004,0.005,0.005,0.005,0.004,0.006,0.004,0.005,0.003,0.004,0.004,0.007,0.013,0.009,0.006,0.004,0.015,0.016,0.009,0.01,0.006,0.007,0.003,0.004,0.002,0.004,0.004,0.005,0.004,0.004,0.005,0.004,0.019,0.015,0.021,0.016,0.01,0.013,0.011,0.009,0.012,0.008,0.007,0.005,0.004,0.15,0.205,0.196,0.244,0.299,0.267,0.337,0.385,0.284,0.191,0.232,0.158,0.206,0.207,0.141,0.133,0.127,0.093,0.097,0.007,0.009,0.008,0.006,0.024,0.02,0.017,0.156,0.221,0.194,0.203,0.19,0.154,0.187,0.229,0.208,0.101,0.05,0.023,0.026,0.008,0.014,0.01,0.006,0.133,0.171,0.269,0.27,0.178,0.235,0.16,0.098,0.2,0.194,0.17,0.151,0.109,0.113,0.04,0.006,0.004,0.005,0.137,0.175,0.175,0.14,0.107,0.118,0.12,0.109,0.112,0.109,0.102,0.04,0.015,0.009,0.012,0.012,0.012,0.018,0.553,0.532,0.481,0.435,0.26,0.283,0.402,0.342,0.276,0.205,0.225,0.263,0.075,0.221,0.273,0.285,0.309,0.317,0.285,0.24,0.21,0.188,0.011,0.01,0.012,0.544,0.484,0.484,0.313,0.234,0.231,0.352,0.269,0.273,0.213,0.274,0.262,0.248,0.283,0.156,0.15,0.166,0.051,0.007,0.016,0.512,0.196,0.41,0.263,0.27,0.289,0.293,0.305,0.308,0.206,0.23,0.259,0.282,0.267,0.273,0.256,0.258,0.22,0.163,0.113,0.023,0.164,0.16,0.167,0.194,0.242,0.234,0.201,0.221,0.236,0.22,0.198,0.13,0.012,0.009,0.408,0.42,0.552,0.108,0.261,0.333,0.335,0.354,0.345,0.436,0.155,0.157,0.067,0.189,0.207,0.202,0.23,0.248,0.281,0.215,0.186,0.184,0.041,0.011,0.013,0.008,0.652,0.539,0.553,0.299,0.214,0.166,0.3,0.269,0.266,0.216,0.215,0.217,0.243,0.262,0.254,0.147,0.222,0.142,0.007,0.008,0.417,0.363,0.584,0.335,0.344,0.353,0.327,0.273,0.303,0.323,0.256,0.276,0.261,0.247,0.235,0.243,0.224,0.231,0.195,0.129,0.091,0.008,0.135,0.126,0.109,0.144,0.2,0.182,0.199,0.193,0.196,0.187,0.177,0.161,0.023,0.006,0.05,0.104,0.109,0.136,0.139,0.19,0.22,0.071,0.209,0.205,0.18,0.161,0.184,0.212,0.255,0.264,0.249,0.15,0.013,0.013,0.052,0.171,0.226,0.259,0.269,0.187,0.19,0.143,0.226,0.181,0.324,0.334,0.17,0.139,0.111,0.046,0.008,0.023,0.465,0.279,0.198,0.229,0.205,0.254,0.15,0.206,0.256,0.191,0.234,0.232,0.175,0.213,0.211,0.207,0.224,0.239,0.25,0.25,0.244,0.239,0.222,0.2,0.187,0.174,0.099,0.013,0.034,0.086,0.105,0.136,0.137,0.117,0.114,0.121,0.134,0.129,0.122,0.09,0.055,0.01,0.007,0.1,0.119,0.107,0.115,0.091,0.183,0.111,0.215,0.215,0.186,0.118,0.116,0.149,0.176,0.199,0.131,0.079,0.014,0.011,0.015,0.195,0.216,0.261,0.291,0.251,0.267,0.26,0.247,0.203,0.156,0.22,0.241,0.25,0.245,0.13,0.011,0.008,0.401,0.319,0.22,0.251,0.243,0.267,0.185,0.166,0.248,0.172,0.209,0.214,0.191,0.265,0.263,0.232,0.23,0.229,0.241,0.242,0.249,0.254,0.254,0.205,0.217,0.218,0.154,0.068,0.01,0.024,0.125,0.112,0.173,0.033,0.144,0.137,0.132,0.119,0.116,0.103,0.026,0.012,0.01,0.352,0.3,0.303,0.387,0.63,0.352,0.342,0.253,0.198,0.167,0.387,0.415,0.325,0.315,0.331,0.323,0.296,0.32,0.278,0.299,0.373,0.329,0.298,0.365,0.337,0.374,0.355,0.265,0.227,0.193,0.119,0.04,0.007,0.009,0.019,0.02,0.009,0.008,0.239,0.111,0.107,0.341,0.355,0.275,0.274,0.338,0.257,0.251,0.277,0.306,0.314,0.302,0.363,0.406,0.366,0.286,0.277,0.262,0.243,0.251,0.253,0.25,0.259,0.201,0.131,0.127,0.141,0.171,0.092,0.117,0.131,0.178,0.151,0.185,0.185,0.171,0.176,0.137,0.111,0.012,0.04,0.318,0.139,0.132,0.298,0.224,0.163,0.152,0.114,0.101,0.258,0.24,0.127,0.149,0.149,0.165,0.148,0.156,0.168,0.163,0.162,0.224,0.148,0.208,0.145,0.193,0.143,0.104,0.133,0.173,0.205,0.195,0.21,0.225,0.228,0.164,0.026,0.015,0.017,0.57,0.488,0.47,0.948,0.951,1.0,0.724,0.872,0.557,0.525,0.505,0.509,0.376,0.434,0.497,0.461,0.323,0.32,0.37,0.366,0.34,0.323,0.378,0.303,0.25,0.194,0.208,0.246,0.362,0.217,0.293,0.381,0.386,0.342,0.375,0.406,0.369,0.348,0.28,0.196,0.021,0.01,0.081,0.354,0.325,0.265,0.587,0.384,0.369,0.321,0.352,0.28,0.495,0.21,0.224,0.219,0.224,0.223,0.214,0.213,0.21,0.217,0.217,0.168,0.156,0.154,0.159,0.106,0.074,0.072,0.067,0.064,0.058,0.053,0.042,0.03,0.014,0.005,0.004,0.004,0.004,0.003,0.007,0.005,0.004,0.003,0.003,0.004,0.003,0.003,0.003,0.003,0.005,0.002,0.005,0.004,0.002,0.007,0.005,0.004,0.005,0.003,0.009,0.005,0.012,0.008,0.004,0.005,0.004,0.007,0.005,0.003,0.007,0.003,0.002,0.006,0.004,0.007,0.006,0.005,0.007,0.003,0.008,0.005,0.004,0.012,0.005,0.005,0.037,0.158,0.166,0.143,0.09,0.075,0.054,0.004,0.003,0.005,0.005,0.004,0.179,0.197,0.166,0.125,0.14,0.136,0.09,0.025,0.013,0.025,0.156,0.299,0.293,0.167,0.137,0.174,0.207,0.148,0.062,0.062,0.01,0.006,0.014,0.005,0.005,0.004,0.097,0.124,0.098,0.114,0.054,0.004,0.016,0.008,0.278,0.412,0.147,0.287,0.234,0.229,0.179,0.113,0.163,0.134,0.111,0.109,0.208,0.11,0.138,0.191,0.116,0.019,0.015,0.007,0.004,0.338,0.31,0.126,0.177,0.179,0.153,0.107,0.036,0.005,0.081,0.084,0.104,0.095,0.086,0.091,0.051,0.048,0.058,0.061,0.065,0.047,0.015,0.018,0.019,0.005,0.01,0.006,0.012,0.007,0.01,0.069,0.043,0.019,0.019,0.022,0.005,0.024,0.008,0.014,0.012,0.004,0.008,0.001,0.001,0.001,0.001,0.001,0.01,0.028,0.034,0.033,0.024,0.016,0.017,0.014,0.011,0.007,0.007,0.002,0.003,0.013,0.011,0.007]},"baby_podcast":{"dur":62.28,"inDb":[-62.91,-64.78,-61.88,-64.87,-62.85,-64.47,-60.42,-59.09,-58.4,-57.93,-57.41,-57.28,-55.72,-57.94,-56.78,-57.92,-59.07,-60.05,-60.32,-62.1,-64.49,-64.34,-61.48,-58.29,-49.7,-49.55,-48.15,-51.11,-56.16,-58.45,-57.1,-55.58,-55.64,-52.42,-51.69,-51.39,-50.57,-50.42,-48.82,-46.55,-47.48,-49.66,-43.79,-49.77,-52.42,-49.33,-50.38,-49.42,-49.66,-50.58,-48.27,-43.53,-44.02,-46.6,-40.78,-39.81,-43.72,-47.92,-44.33,-43.62,-45.87,-46.5,-47.56,-44.89,-48.32,-51.48,-51.42,-49.08,-48.88,-52.08,-49.61,-48.7,-50.14,-48.06,-49.9,-50.1,-49.97,-54.52,-50.89,-55.13,-55.8,-57.72,-57.08,-59.05,-58.6,-59.19,-59.65,-57.54,-54.2,-51.73,-51.73,-52.05,-52.28,-53.38,-57.49,-59.65,-59.22,-58.42,-59.38,-59.71,-61.74,-62.1,-62.94,-82.45,-200.0],"aiDb":[-69.67,-71.52,-67.87,-71.19,-70.24,-72.34,-70.6,-69.61,-70.76,-69.39,-70.06,-70.17,-69.56,-71.97,-70.6,-71.24,-72.22,-70.75,-70.13,-70.06,-71.1,-69.24,-64.05,-59.81,-51.19,-50.73,-48.57,-51.15,-56.38,-58.61,-57.3,-55.8,-55.81,-52.55,-51.84,-51.61,-51.18,-50.79,-49.0,-46.79,-47.76,-49.9,-44.06,-50.01,-52.78,-49.59,-50.62,-49.6,-49.96,-50.89,-48.57,-43.86,-44.42,-46.91,-41.17,-40.13,-44.21,-48.28,-44.76,-43.94,-46.21,-47.04,-48.13,-45.65,-48.9,-51.93,-52.02,-50.0,-49.46,-52.76,-50.37,-49.55,-50.97,-48.61,-50.55,-50.6,-50.4,-55.08,-51.65,-55.73,-56.62,-58.39,-57.84,-59.92,-60.1,-60.97,-61.0,-58.62,-54.89,-52.29,-52.12,-52.42,-52.69,-53.8,-58.07,-60.61,-60.15,-59.23,-59.91,-60.28,-62.03,-62.38,-63.37,-80.97,-200.0],"inLoud":-30.04,"aiLoud":-30.52,"suggest":[0.5,0.0,0.5,0.5,1.0,0.5,0.5],"peaks":[0.042,0.047,0.04,0.013,0.003,0.001,0.001,0.001,0.001,0.002,0.003,0.002,0.004,0.004,0.003,0.004,0.006,0.007,0.011,0.006,0.021,0.035,0.059,0.011,0.005,0.134,0.188,0.151,0.087,0.095,0.105,0.163,0.179,0.14,0.136,0.158,0.178,0.236,0.249,0.37,0.351,0.042,0.061,0.24,0.254,0.204,0.186,0.146,0.136,0.207,0.085,0.109,0.12,0.156,0.131,0.064,0.118,0.117,0.106,0.077,0.078,0.051,0.059,0.042,0.031,0.014,0.007,0.005,0.004,0.004,0.003,0.006,0.005,0.005,0.009,0.007,0.005,0.032,0.11,0.31,0.214,0.208,0.175,0.177,0.152,0.174,0.075,0.22,0.167,0.164,0.134,0.134,0.087,0.132,0.102,0.03,0.087,0.058,0.059,0.018,0.008,0.007,0.033,0.058,0.225,0.196,0.151,0.118,0.156,0.137,0.082,0.111,0.095,0.043,0.064,0.029,0.01,0.006,0.007,0.006,0.047,0.112,0.144,0.179,0.17,0.192,0.168,0.206,0.189,0.197,0.318,0.146,0.138,0.104,0.06,0.056,0.013,0.026,0.019,0.016,0.255,0.329,0.026,0.243,0.204,0.093,0.153,0.014,0.072,0.133,0.016,0.087,0.052,0.016,0.06,0.008,0.003,0.004,0.009,0.01,0.009,0.005,0.007,0.074,0.08,0.062,0.081,0.08,0.075,0.09,0.096,0.082,0.066,0.057,0.015,0.004,0.001,0.001,0.002,0.005,0.013,0.014,0.015,0.015,0.013,0.01,0.007,0.002,0.007,0.003,0.002,0.001,0.001,0.001,0.008,0.006,0.034,0.124,0.044,0.058,0.214,0.194,0.106,0.109,0.077,0.024,0.004,0.004,0.001,0.001,0.001,0.002,0.004,0.071,0.227,0.298,0.239,0.162,0.053,0.143,0.178,0.083,0.21,0.115,0.106,0.027,0.009,0.005,0.003,0.004,0.003,0.008,0.006,0.01,0.015,0.006,0.01,0.003,0.11,0.172,0.185,0.276,0.171,0.294,0.213,0.253,0.288,0.108,0.003,0.011,0.006,0.003,0.003,0.004,0.005,0.002,0.002,0.001,0.001,0.008,0.007,0.001,0.005,0.011,0.01,0.016,0.012,0.005,0.005,0.016,0.183,0.149,0.16,0.283,0.286,0.094,0.266,0.188,0.189,0.033,0.233,0.224,0.164,0.176,0.177,0.143,0.137,0.096,0.014,0.011,0.01,0.005,0.01,0.003,0.007,0.01,0.011,0.011,0.008,0.006,0.003,0.002,0.096,0.116,0.066,0.049,0.149,0.086,0.198,0.153,0.082,0.223,0.239,0.27,0.18,0.163,0.137,0.253,0.106,0.068,0.214,0.147,0.191,0.1,0.102,0.112,0.063,0.038,0.005,0.011,0.013,0.017,0.022,0.022,0.014,0.019,0.019,0.019,0.034,0.053,0.273,0.113,0.031,0.006,0.008,0.013,0.201,0.23,0.099,0.444,0.37,0.237,0.234,0.156,0.215,0.223,0.198,0.101,0.091,0.086,0.027,0.009,0.006,0.007,0.009,0.011,0.006,0.005,0.003,0.004,0.002,0.005,0.002,0.001,0.004,0.297,0.347,0.325,0.229,0.202,0.15,0.211,0.231,0.176,0.131,0.006,0.003,0.004,0.006,0.137,0.16,0.132,0.045,0.127,0.143,0.124,0.153,0.163,0.103,0.077,0.164,0.154,0.105,0.089,0.041,0.004,0.006,0.004,0.002,0.003,0.01,0.008,0.009,0.01,0.006,0.012,0.009,0.008,0.006,0.006,0.006,0.003,0.004,0.002,0.001,0.002,0.001,0.013,0.014,0.004,0.003,0.002,0.014,0.015,0.021,0.027,0.017,0.011,0.016,0.011,0.013,0.105,0.191,0.204,0.133,0.234,0.213,0.238,0.214,0.179,0.133,0.14,0.113,0.131,0.119,0.11,0.125,0.089,0.091,0.062,0.045,0.017,0.006,0.002,0.001,0.001,0.001,0.008,0.004,0.001,0.001,0.001,0.003,0.009,0.022,0.038,0.184,0.284,0.479,0.456,0.853,0.832,0.599,0.407,1.0,0.771,0.417,0.104,0.012,0.011,0.008,0.006,0.006,0.004,0.003,0.002,0.018,0.01,0.004,0.001,0.001,0.001,0.004,0.008,0.001,0.001,0.005,0.001,0.003,0.002,0.004,0.05,0.035,0.003,0.007,0.001,0.001,0.001,0.001,0.001,0.001,0.006,0.002,0.002,0.001,0.001,0.001,0.001,0.001,0.008,0.005,0.005,0.001,0.002,0.002,0.011,0.229,0.272,0.335,0.415,0.464,0.404,0.393,0.595,0.275,0.487,0.466,0.434,0.458,0.489,0.455,0.41,0.503,0.497,0.37,0.341,0.207,0.391,0.232,0.177,0.024,0.005,0.014,0.039,0.026,0.027,0.023,0.02,0.028,0.035,0.035,0.028,0.028,0.022,0.016,0.13,0.18,0.228,0.284,0.285,0.284,0.298,0.272,0.251,0.301,0.29,0.155,0.013,0.033,0.05,0.039,0.045,0.046,0.018,0.012,0.012,0.009,0.009,0.011,0.011,0.01,0.005,0.007,0.058,0.1,0.123,0.259,0.221,0.281,0.252,0.219,0.098,0.172,0.147,0.189,0.189,0.29,0.179,0.181,0.198,0.134,0.202,0.155,0.146,0.155,0.112,0.121,0.057,0.023,0.023,0.032,0.018,0.018,0.018,0.021,0.018,0.014,0.005,0.008,0.014,0.003,0.002,0.252,0.31,0.117,0.393,0.201,0.166,0.184,0.189,0.164,0.259,0.186,0.176,0.198,0.163,0.097,0.067,0.017,0.078,0.064,0.082,0.039,0.003,0.004,0.02,0.028,0.032,0.043,0.024,0.017,0.021,0.013,0.013,0.015,0.005,0.005,0.005,0.005,0.015,0.012,0.003,0.001,0.011,0.011,0.016,0.019,0.018,0.064,0.215,0.331,0.647,0.813,0.704,0.474,0.394,0.334,0.107,0.003,0.002,0.019,0.01,0.001,0.004,0.003,0.035,0.018,0.045,0.041,0.03,0.06,0.054,0.026,0.019,0.005,0.009,0.014,0.003,0.002,0.006,0.005,0.017,0.021,0.006,0.009,0.011,0.012,0.009,0.105,0.128,0.149,0.143,0.046,0.009,0.005,0.002,0.001,0.001,0.004,0.089,0.116,0.179,0.098,0.172,0.114,0.179,0.147,0.126,0.126,0.101,0.177,0.208,0.042,0.04,0.013,0.01,0.012,0.009,0.015,0.014,0.158,0.155,0.089,0.087,0.09,0.076,0.017,0.063,0.034,0.002,0.001,0.001,0.001,0.001,0.001,0.001,0.017,0.037,0.08,0.072,0.031,0.002,0.001,0.002,0.058,0.029,0.001,0.001,0.001,0.0,0.0,0.001,0.002,0.001,0.001,0.001,0.001,0.001,0.0,0.006,0.025,0.019,0.026,0.025,0.018,0.014,0.004,0.001,0.001,0.001,0.001,0.002,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.004,0.005,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.0,0.001,0.001,0.001,0.001,0.0,0.001,0.001,0.001,0.001,0.001,0.0,0.001,0.001,0.0,0.0,0.001,0.001,0.0,0.001,0.001,0.0,0.001,0.0,0.0,0.001,0.0,0.001,0.0,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.0,0.0,0.0,0.001,0.0,0.001,0.001,0.001]},"crowd_podcast":{"dur":99.585,"inDb":[-61.78,-62.04,-58.64,-63.63,-63.56,-64.96,-61.85,-65.23,-65.61,-65.6,-66.97,-68.36,-67.72,-69.01,-69.32,-69.26,-70.07,-70.58,-69.45,-71.05,-69.8,-70.16,-62.5,-71.67,-69.7,-67.9,-64.85,-61.39,-57.52,-55.01,-51.95,-49.88,-48.8,-48.67,-48.9,-50.72,-48.75,-48.29,-47.24,-46.11,-46.49,-45.36,-48.67,-49.34,-49.86,-47.23,-48.06,-48.23,-46.2,-46.55,-44.28,-42.23,-41.17,-40.21,-42.26,-43.42,-41.64,-44.69,-41.25,-41.16,-39.14,-40.38,-44.18,-41.82,-44.14,-46.9,-49.51,-48.74,-46.82,-45.79,-46.14,-48.72,-47.48,-47.88,-48.94,-50.64,-51.81,-52.93,-56.9,-56.79,-58.52,-58.05,-57.66,-59.41,-62.2,-62.1,-59.41,-55.46,-53.49,-51.44,-51.72,-53.09,-55.27,-56.19,-57.78,-59.73,-59.17,-58.62,-60.38,-61.26,-62.23,-62.86,-61.93,-81.72,-200.0],"aiDb":[-73.19,-74.42,-70.3,-73.17,-73.7,-76.14,-72.23,-73.88,-73.99,-74.7,-74.19,-75.57,-73.94,-75.63,-75.85,-75.68,-76.96,-78.23,-76.99,-77.44,-79.06,-77.62,-74.84,-76.03,-71.94,-69.11,-66.22,-63.85,-60.14,-56.52,-53.1,-51.25,-49.65,-49.25,-49.57,-51.83,-49.69,-49.39,-48.4,-47.08,-47.38,-46.21,-49.62,-50.41,-50.93,-47.94,-49.22,-49.64,-47.72,-47.79,-45.48,-43.41,-42.13,-40.98,-43.15,-44.66,-42.95,-45.89,-42.24,-42.07,-39.93,-41.14,-45.44,-43.19,-45.38,-47.91,-50.19,-49.58,-47.49,-46.37,-46.77,-49.29,-48.14,-48.45,-49.52,-51.18,-52.42,-53.55,-57.6,-57.64,-59.47,-58.8,-58.48,-60.19,-62.74,-62.61,-59.82,-55.75,-53.91,-51.85,-52.09,-53.5,-55.7,-56.6,-58.17,-60.19,-59.6,-59.12,-60.92,-61.73,-62.66,-63.63,-62.63,-80.43,-200.0],"inLoud":-28.37,"aiLoud":-29.29,"suggest":[1.0,0.5,0.5,0.5,0.5,0.5,1.0],"peaks":[0.01,0.011,0.013,0.015,0.014,0.012,0.011,0.017,0.015,0.012,0.017,0.017,0.014,0.019,0.018,0.014,0.015,0.013,0.015,0.016,0.026,0.257,0.333,0.67,0.442,0.277,0.383,0.312,0.176,0.162,0.013,0.012,0.011,0.01,0.011,0.01,0.011,0.018,0.018,0.02,0.013,0.016,0.119,0.165,0.213,0.258,0.27,0.19,0.154,0.171,0.161,0.146,0.083,0.016,0.017,0.014,0.019,0.018,0.015,0.015,0.016,0.051,0.17,0.259,0.224,0.193,0.234,0.167,0.122,0.277,0.222,0.21,0.212,0.203,0.143,0.107,0.041,0.011,0.012,0.01,0.012,0.012,0.01,0.013,0.02,0.018,0.02,0.018,0.022,0.031,0.03,0.056,0.173,0.159,0.218,0.322,0.205,0.221,0.177,0.137,0.123,0.019,0.016,0.019,0.012,0.014,0.015,0.014,0.012,0.013,0.015,0.014,0.014,0.018,0.016,0.015,0.014,0.014,0.012,0.013,0.011,0.016,0.016,0.012,0.013,0.129,0.332,0.377,0.343,0.284,0.269,0.181,0.294,0.252,0.166,0.107,0.109,0.118,0.07,0.015,0.012,0.019,0.108,0.055,0.122,0.122,0.131,0.117,0.077,0.048,0.013,0.037,0.014,0.016,0.012,0.012,0.012,0.014,0.013,0.02,0.015,0.017,0.014,0.016,0.014,0.012,0.011,0.014,0.014,0.012,0.013,0.011,0.013,0.013,0.012,0.014,0.018,0.018,0.018,0.013,0.015,0.024,0.03,0.015,0.015,0.014,0.014,0.018,0.111,0.259,0.219,0.309,0.245,0.412,0.369,0.447,0.452,0.106,0.016,0.015,0.013,0.013,0.012,0.014,0.014,0.02,0.016,0.018,0.014,0.014,0.011,0.013,0.051,0.016,0.016,0.015,0.013,0.013,0.01,0.013,0.014,0.015,0.02,0.018,0.017,0.012,0.013,0.106,0.188,0.301,0.271,0.128,0.064,0.018,0.02,0.017,0.012,0.017,0.314,0.648,0.358,0.304,0.512,0.529,0.385,0.27,0.029,0.013,0.014,0.016,0.014,0.023,0.021,0.02,0.053,0.251,0.24,0.255,0.216,0.344,0.257,0.246,0.33,0.277,0.221,0.285,0.195,0.168,0.123,0.027,0.02,0.011,0.018,0.001,0.001,0.001,0.002,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.002,0.001,0.018,0.007,0.013,0.006,0.001,0.001,0.001,0.002,0.001,0.002,0.001,0.001,0.001,0.001,0.002,0.002,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.018,0.025,0.024,0.031,0.027,0.031,0.022,0.029,0.026,0.029,0.026,0.031,0.022,0.029,0.031,0.028,0.026,0.024,0.398,0.46,0.96,0.75,0.631,0.584,0.643,0.803,0.839,0.479,0.039,0.029,0.025,0.02,0.021,0.018,0.022,0.022,0.02,0.075,0.5,0.502,0.728,0.428,0.435,0.409,0.297,0.348,0.368,0.021,0.026,0.033,0.024,0.032,0.024,0.03,0.031,0.028,0.029,0.033,0.025,0.027,0.028,0.028,0.022,0.023,0.027,0.027,0.027,0.041,0.03,0.034,0.026,0.025,0.02,0.019,0.271,0.668,1.0,0.511,0.465,0.516,0.585,0.419,0.414,0.481,0.332,0.43,0.231,0.204,0.24,0.179,0.217,0.289,0.277,0.246,0.19,0.234,0.138,0.056,0.021,0.029,0.032,0.028,0.03,0.036,0.027,0.028,0.03,0.028,0.024,0.027,0.044,0.337,0.303,0.448,0.459,0.742,0.732,0.433,0.342,0.325,0.098,0.028,0.033,0.023,0.028,0.074,0.187,0.189,0.242,0.223,0.139,0.149,0.158,0.088,0.027,0.049,0.071,0.052,0.036,0.026,0.03,0.031,0.118,0.306,0.146,0.371,0.341,0.045,0.036,0.042,0.033,0.029,0.026,0.034,0.025,0.023,0.024,0.027,0.033,0.064,0.283,0.272,0.283,0.206,0.303,0.047,0.09,0.185,0.236,0.085,0.106,0.11,0.035,0.023,0.023,0.034,0.048,0.15,0.187,0.111,0.194,0.101,0.102,0.1,0.107,0.126,0.05,0.054,0.052,0.042,0.034,0.094,0.125,0.098,0.229,0.213,0.11,0.1,0.158,0.295,0.115,0.141,0.04,0.03,0.035,0.033,0.041,0.036,0.063,0.104,0.253,0.304,0.311,0.21,0.056,0.127,0.256,0.253,0.218,0.199,0.279,0.121,0.136,0.127,0.219,0.22,0.12,0.147,0.197,0.136,0.102,0.019,0.031,0.029,0.04,0.046,0.04,0.029,0.036,0.037,0.031,0.044,0.038,0.03,0.029,0.03,0.026,0.022,0.025,0.028,0.031,0.03,0.042,0.027,0.034,0.024,0.018,0.024,0.021,0.048,0.114,0.113,0.084,0.053,0.018,0.022,0.021,0.02,0.026,0.04,0.035,0.04,0.074,0.068,0.031,0.001,0.001,0.002,0.002,0.001,0.001,0.001,0.002,0.001,0.002,0.002,0.016,0.001,0.01,0.01,0.021,0.02,0.015,0.017,0.019,0.002,0.001,0.003,0.006,0.001,0.001,0.002,0.001,0.001,0.001,0.001,0.001,0.034,0.035,0.06,0.047,0.052,0.039,0.046,0.048,0.05,0.049,0.055,0.079,0.113,0.1,0.106,0.066,0.089,0.101,0.104,0.104,0.113,0.091,0.085,0.048,0.039,0.031,0.036,0.037,0.033,0.047,0.046,0.034,0.036,0.021,0.04,0.029,0.038,0.063,0.19,0.291,0.256,0.272,0.229,0.17,0.363,0.352,0.275,0.213,0.144,0.254,0.163,0.189,0.319,0.051,0.218,0.127,0.15,0.225,0.314,0.306,0.248,0.239,0.234,0.198,0.132,0.041,0.061,0.049,0.049,0.049,0.044,0.03,0.035,0.255,0.3,0.225,0.045,0.037,0.04,0.14,0.152,0.229,0.214,0.053,0.075,0.063,0.041,0.038,0.075,0.208,0.234,0.199,0.176,0.171,0.117,0.054,0.054,0.127,0.205,0.226,0.219,0.153,0.082,0.086,0.15,0.176,0.175,0.148,0.122,0.041,0.052,0.043,0.051,0.126,0.124,0.18,0.156,0.15,0.122,0.092,0.124,0.115,0.09,0.038,0.038,0.03,0.037,0.042,0.038,0.044,0.07,0.069,0.049,0.212,0.245,0.271,0.204,0.29,0.215,0.202,0.162,0.248,0.197,0.175,0.178,0.174,0.148,0.145,0.119,0.1,0.086,0.054,0.052,0.056,0.041,0.039,0.046,0.049,0.367,0.42,0.466,0.359,0.275,0.227,0.049,0.038,0.042,0.061,0.048,0.037,0.043,0.028,0.036,0.036,0.042,0.319,0.155,0.229,0.204,0.185,0.225,0.098,0.185,0.163,0.148,0.138,0.094,0.102,0.083,0.063,0.044,0.059,0.055,0.055,0.059,0.057,0.037,0.048,0.096,0.156,0.202,0.191,0.17,0.202,0.159,0.106,0.14,0.119,0.112,0.074,0.107,0.146,0.134,0.081,0.092,0.103,0.083,0.064,0.117,0.106,0.096,0.06,0.079,0.056,0.059,0.038,0.047,0.097,0.103,0.063,0.042,0.172,0.091,0.166,0.141,0.096,0.111,0.086,0.088,0.056,0.063,0.064,0.042,0.31,0.269,0.313,0.066,0.048,0.055,0.051,0.062,0.069,0.058,0.055,0.048,0.04,0.032,0.039,0.037,0.05,0.064,0.042,0.053,0.056,0.03,0.032,0.041,0.047,0.072,0.073,0.24,0.246,0.149,0.078,0.023,0.016,0.012,0.007,0.006,0.002,0.002,0.018]},"white_podcast":{"dur":134.07,"inDb":[-63.04,-63.07,-60.69,-63.3,-62.37,-67.87,-65.58,-64.1,-65.99,-67.29,-64.91,-65.24,-64.08,-65.27,-63.82,-64.62,-66.89,-68.57,-69.08,-69.42,-70.3,-67.82,-67.83,-68.9,-65.59,-62.4,-57.13,-54.86,-56.43,-53.08,-51.46,-51.08,-51.23,-49.64,-49.56,-49.35,-47.16,-45.93,-48.57,-49.68,-50.75,-50.84,-51.08,-52.23,-51.04,-49.97,-49.7,-48.67,-46.2,-45.0,-45.2,-45.29,-45.64,-47.92,-48.93,-48.45,-47.61,-46.81,-46.07,-45.86,-46.26,-48.37,-48.07,-51.14,-51.91,-53.82,-54.69,-52.88,-52.87,-52.73,-51.39,-50.56,-51.86,-53.74,-55.91,-56.42,-57.63,-58.62,-59.59,-60.89,-60.83,-59.28,-60.1,-61.23,-63.06,-63.62,-61.75,-62.01,-58.8,-57.94,-57.31,-58.35,-59.57,-60.72,-61.93,-60.67,-58.33,-61.34,-59.1,-59.91,-60.76,-59.06,-60.51,-78.63,-200.0],"aiDb":[-71.56,-72.31,-68.88,-71.71,-69.73,-74.97,-71.84,-70.42,-72.14,-73.82,-71.81,-73.49,-72.83,-74.51,-72.79,-72.31,-74.48,-74.09,-74.29,-74.21,-76.52,-74.31,-73.35,-72.77,-67.35,-63.35,-57.54,-55.44,-56.94,-53.29,-51.7,-51.46,-51.48,-49.79,-49.79,-49.66,-47.48,-46.32,-48.96,-50.11,-51.21,-51.18,-51.41,-52.64,-51.28,-50.13,-49.96,-49.01,-46.57,-45.39,-45.6,-45.76,-46.07,-48.32,-49.25,-48.82,-48.0,-47.17,-46.4,-46.24,-46.69,-48.91,-48.78,-52.11,-52.88,-54.99,-55.52,-53.84,-53.6,-53.62,-52.1,-51.35,-53.18,-54.8,-57.07,-58.13,-59.28,-60.29,-61.16,-63.1,-63.08,-61.87,-62.59,-64.1,-69.11,-73.09,-72.19,-69.45,-64.13,-59.91,-59.99,-62.24,-65.73,-67.77,-71.15,-70.54,-69.5,-70.51,-71.44,-71.54,-71.62,-71.69,-71.38,-91.23,-200.0],"inLoud":-32.37,"aiLoud":-33.11,"suggest":[0.5,0.0,0.5,0.0,4.5,11.5,12.0],"peaks":[0.016,0.017,0.016,0.017,0.025,0.021,0.017,0.02,0.02,0.026,0.017,0.019,0.021,0.019,0.021,0.019,0.02,0.02,0.294,0.519,0.603,0.543,0.589,0.289,0.745,0.448,0.604,0.656,0.417,0.025,0.016,0.018,0.017,0.017,0.018,0.017,0.021,0.029,0.033,0.411,0.482,0.418,0.424,0.334,0.22,0.021,0.019,0.018,0.021,0.019,0.101,0.436,0.444,0.342,0.409,0.424,0.347,0.311,0.473,0.519,0.284,0.118,0.049,0.023,0.022,0.019,0.02,0.02,0.16,0.155,0.361,0.311,0.341,0.274,0.02,0.019,0.019,0.022,0.022,0.423,0.212,0.285,0.459,0.488,0.241,0.088,0.094,0.021,0.018,0.018,0.02,0.019,0.017,0.019,0.016,0.017,0.479,0.478,0.583,0.592,0.394,0.616,0.539,0.397,0.382,0.361,0.223,0.106,0.023,0.022,0.02,0.018,0.021,0.018,0.017,0.02,0.017,0.019,0.019,0.017,0.016,0.021,0.019,0.016,0.018,0.017,0.016,0.017,0.017,0.021,0.018,0.017,0.018,0.02,0.019,0.02,0.018,0.017,0.018,0.388,0.357,0.016,0.046,0.019,0.018,0.018,0.049,0.038,0.034,0.034,0.019,0.019,0.11,0.209,0.358,0.334,0.224,0.046,0.022,0.022,0.022,0.022,0.027,0.029,0.018,0.022,0.025,0.019,0.02,0.021,0.019,0.018,0.314,0.442,0.483,0.558,0.58,0.54,0.4,0.368,0.065,0.024,0.02,0.019,0.018,0.016,0.027,0.654,0.921,0.847,0.48,0.549,0.388,0.581,0.506,0.439,0.116,0.018,0.018,0.019,0.019,0.02,0.225,0.332,0.379,0.283,0.252,0.181,0.089,0.046,0.003,0.002,0.002,0.002,0.002,0.002,0.002,0.002,0.002,0.002,0.002,0.008,0.113,0.183,0.192,0.147,0.191,0.127,0.067,0.049,0.05,0.029,0.029,0.032,0.029,0.038,0.032,0.027,0.029,0.03,0.033,0.026,0.027,0.027,0.03,0.029,0.029,0.029,0.032,0.035,0.028,0.025,0.036,0.03,0.031,0.03,0.03,0.03,0.029,0.028,0.028,0.027,0.033,0.027,0.028,0.026,0.029,0.035,0.029,0.028,0.029,0.149,0.237,0.264,0.087,0.033,0.031,0.03,0.03,0.031,0.034,0.029,0.035,0.259,0.415,0.364,0.344,0.196,0.32,0.468,0.117,0.033,0.031,0.032,0.03,0.052,0.223,0.278,0.237,0.083,0.038,0.029,0.03,0.029,0.028,0.029,0.032,0.031,0.033,0.039,0.046,0.333,0.292,0.466,0.571,0.561,0.259,0.549,0.503,0.573,0.427,0.48,0.349,0.057,0.035,0.034,0.033,0.03,0.03,0.035,0.033,0.031,0.029,0.026,0.034,0.032,0.029,0.027,0.257,0.426,0.258,0.225,0.079,0.031,0.03,0.221,0.257,0.279,0.222,0.083,0.031,0.031,0.031,0.041,0.033,0.028,0.033,0.029,0.03,0.035,0.156,0.261,0.355,0.279,0.215,0.184,0.162,0.14,0.223,0.273,0.233,0.092,0.042,0.03,0.029,0.028,0.034,0.032,0.028,0.029,0.027,0.03,0.032,0.03,0.028,0.029,0.029,0.385,0.659,0.783,0.765,0.94,0.556,0.57,0.452,0.198,0.034,0.041,0.189,0.528,0.634,0.599,0.74,0.396,0.305,0.624,0.032,0.247,0.396,0.282,0.268,0.323,0.343,0.539,0.499,0.211,0.025,0.033,0.039,0.168,0.103,0.035,0.03,0.034,0.029,0.029,0.038,0.033,0.036,0.037,0.035,0.029,0.034,0.274,0.302,0.075,0.005,0.002,0.028,0.108,0.103,0.115,0.084,0.085,0.087,0.054,0.06,0.065,0.064,0.03,0.018,0.004,0.08,0.137,0.196,0.17,0.159,0.145,0.11,0.103,0.146,0.171,0.273,0.208,0.198,0.296,0.27,0.235,0.231,0.14,0.106,0.058,0.058,0.058,0.052,0.051,0.05,0.149,0.534,0.475,0.387,0.336,0.257,0.381,0.367,0.289,0.131,0.207,0.204,0.256,0.231,0.277,0.082,0.054,0.235,0.291,0.31,0.295,0.272,0.26,0.15,0.141,0.136,0.148,0.154,0.162,0.102,0.088,0.057,0.061,0.059,0.152,0.363,0.881,0.687,0.228,0.282,0.166,0.137,0.137,0.133,0.075,0.059,0.059,0.057,0.061,0.057,0.053,0.053,0.055,0.049,0.055,0.056,0.063,0.051,0.053,0.063,0.064,0.052,0.256,0.305,0.368,0.226,0.114,0.075,0.05,0.051,0.061,0.813,0.745,0.382,0.646,0.529,0.208,0.057,0.056,0.052,0.059,0.058,0.048,0.055,0.062,0.045,0.049,0.058,0.051,0.065,0.058,0.058,0.051,0.563,0.577,0.648,0.866,0.809,0.692,0.674,0.694,0.425,0.364,0.285,0.065,0.05,0.049,0.052,0.051,0.053,0.049,0.056,0.048,0.371,0.948,0.728,0.707,0.598,0.741,0.122,0.044,0.049,0.044,0.769,0.939,0.978,0.913,0.547,0.307,0.047,0.049,0.047,0.051,0.054,0.084,0.052,0.052,0.11,0.089,0.092,0.052,0.056,0.051,0.054,0.067,0.052,0.051,0.051,0.051,0.052,0.052,0.268,0.314,0.239,0.188,0.229,0.24,0.227,0.213,0.219,0.194,0.203,0.168,0.231,0.228,0.232,0.208,0.165,0.141,0.149,0.176,0.195,0.23,0.265,0.316,0.311,0.284,0.33,0.34,0.233,0.289,0.307,0.324,0.419,0.277,0.142,0.002,0.002,0.002,0.002,0.002,0.002,0.002,0.002,0.134,0.162,0.173,0.18,0.189,0.209,0.164,0.149,0.042,0.003,0.002,0.001,0.002,0.004,0.204,0.17,0.126,0.119,0.1,0.117,0.095,0.099,0.097,0.09,0.086,0.093,0.082,0.201,0.331,0.363,0.436,0.413,0.461,0.487,0.339,0.313,0.296,0.253,0.164,0.097,0.086,0.167,0.293,0.351,0.409,0.395,0.344,0.328,0.129,0.094,0.11,0.241,0.367,0.339,0.365,0.342,0.37,0.331,0.352,0.346,0.286,0.237,0.112,0.098,0.099,0.097,0.09,0.088,0.093,0.102,0.094,0.088,0.085,0.363,0.356,0.244,0.228,0.245,0.24,0.237,0.189,0.195,0.185,0.202,0.127,0.095,0.106,0.433,0.458,0.434,0.395,0.387,0.327,0.214,0.096,0.108,0.089,0.098,0.08,0.093,0.108,0.085,0.09,0.075,0.08,0.097,0.092,0.364,0.717,0.581,0.533,0.712,0.699,0.695,0.398,0.649,0.69,1.0,0.116,0.66,0.238,0.348,0.401,0.392,0.417,0.306,0.346,0.266,0.28,0.147,0.096,0.096,0.099,0.683,0.766,0.74,0.301,0.565,0.562,0.713,0.552,0.391,0.618,0.098,0.568,0.859,0.202,0.1,0.1,0.094,0.1,0.097,0.086,0.659,0.613,0.601,0.616,0.526,0.469,0.525,0.617,0.386,0.484,0.327,0.285,0.191,0.089,0.1,0.103,0.102,0.093,0.094,0.087,0.093,0.09,0.097,0.085,0.092,0.103,0.089,0.109,0.112,0.093,0.088,0.094,0.095,0.089,0.097,0.105,0.088,0.08,0.084,0.097,0.095,0.297,0.547,0.135,0.095,0.096,0.079,0.111,0.098,0.096,0.095,0.085,0.093,0.092,0.087,0.283,0.398,0.316,0.265,0.117,0.109,0.093,0.092,0.088,0.113,0.09,0.101,0.112,0.009,0.004,0.002,0.002,0.001,0.002,0.002,0.002]}},"suggestAll":{"flat":[1.5,0.5,0.5,1.5,4.0,4.5,6.5],"podcast":[0.5,0.0,0.5,0.5,2.0,3.0,5.0]}};</script>
+<script>
+(() => {
+'use strict';
+const APP_VERSION = '1.0', EQ_FORMAT = 1, DESIGN_FS = 16000;
+// Slider layout. Each saved EQ stores these exact filters, so older saves stay valid if the layout changes.
+const BANDS = [
+  {type:'peaking',   freq:200,  q:1.2, word:'Warmth',    hint:'Fullness of your notes. Too much sounds muddy.'},
+  {type:'peaking',   freq:400,  q:1.2, word:'Body',      hint:'Thickness of the voice. Too little sounds hollow.'},
+  {type:'peaking',   freq:800,  q:1.2, word:'Boxy',      hint:'Cardboard-box sound. Lower it if the AI sounds boxy.'},
+  {type:'peaking',   freq:1500, q:1.2, word:'Nasal',     hint:'Honky, through-the-nose sound. Lower it if the AI sounds nasal.'},
+  {type:'peaking',   freq:3000, q:1.4, word:'Presence',  hint:'Clarity of the words. Raise it if the AI sounds far away. Too much sounds harsh.'},
+  {type:'peaking',   freq:5000, q:1.4, word:'Sibilance', hint:'S and T sounds. Too much sounds hissy.'},
+  {type:'highshelf', freq:7000, q:null, word:'Air',      hint:'Sparkle and breath. Changes everything above 7 kHz.'},
+];
+const NB = BANDS.length, GMAX = 12, LMAX = 12, STEP = 0.5;
+const RECS = DATA.recs, MICS = DATA.mics;
+const LS_KEY = 'vocal-eq-match:v1';
+
+const $ = s => document.querySelector(s);
+const recName = id => (RECS.find(r => r.id === id) || {name:id}).name;
+const micName = id => (MICS.find(m => m.id === id) || {name:id}).name;
+const fmtHz = f => f >= 1000 ? (f / 1000).toString() + ' kHz' : f + ' Hz';
+const fmtHzShort = f => f >= 1000 ? (f / 1000).toString() + 'k' : String(f);
+const fmtDb = v => { const r = Math.round(v * 10) / 10; return (r > 0 ? '+' : r < 0 ? '−' : '') + Math.abs(r).toFixed(1); };
+const fmtTime = t => { t = Math.max(0, t || 0); const m = Math.floor(t / 60), s = Math.floor(t % 60); return m + ':' + String(s).padStart(2, '0'); };
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const snap = v => Math.round(v / STEP) * STEP;
+const itemKey = (rec, mic) => rec + '_' + mic;
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+document.querySelectorAll('.app-ver').forEach(e => e.textContent = APP_VERSION);
+document.querySelectorAll('.eq-ver').forEach(e => e.textContent = EQ_FORMAT);
+
+/* ---------- EQ maths (RBJ cookbook, identical to Web Audio BiquadFilterNode) ---------- */
+function coefs(type, f0, g, q, fs) {
+  const A = Math.pow(10, g / 40), w0 = 2 * Math.PI * f0 / fs, c = Math.cos(w0), s = Math.sin(w0);
+  let b0, b1, b2, a0, a1, a2;
+  if (type === 'peaking') {
+    const al = s / (2 * q);
+    b0 = 1 + al * A; b1 = -2 * c; b2 = 1 - al * A; a0 = 1 + al / A; a1 = -2 * c; a2 = 1 - al / A;
+  } else {
+    const al = s / 2 * Math.SQRT2, sA = 2 * Math.sqrt(A) * al;  // shelf slope S = 1
+    if (type === 'lowshelf') {
+      b0 = A * ((A + 1) - (A - 1) * c + sA); b1 = 2 * A * ((A - 1) - (A + 1) * c); b2 = A * ((A + 1) - (A - 1) * c - sA);
+      a0 = (A + 1) + (A - 1) * c + sA; a1 = -2 * ((A - 1) + (A + 1) * c); a2 = (A + 1) + (A - 1) * c - sA;
+    } else {
+      b0 = A * ((A + 1) + (A - 1) * c + sA); b1 = -2 * A * ((A - 1) + (A + 1) * c); b2 = A * ((A + 1) + (A - 1) * c - sA);
+      a0 = (A + 1) - (A - 1) * c + sA; a1 = 2 * ((A - 1) - (A + 1) * c); a2 = (A + 1) - (A - 1) * c - sA;
+    }
+  }
+  return [b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0];
+}
+function magDb(co, f, fs) {
+  const w = 2 * Math.PI * f / fs, cr = Math.cos(w), ci = -Math.sin(w), c2r = Math.cos(2 * w), c2i = -Math.sin(2 * w);
+  const nr = co[0] + co[1] * cr + co[2] * c2r, ni = co[1] * ci + co[2] * c2i;
+  const dr = 1 + co[3] * cr + co[4] * c2r, di = co[3] * ci + co[4] * c2i;
+  return 10 * Math.log10((nr * nr + ni * ni) / (dr * dr + di * di));
+}
+function eqCurve(g, freqs) {
+  const cs = BANDS.map((b, i) => coefs(b.type, b.freq, g[i], b.q || 1, DESIGN_FS));
+  return freqs.map(f => cs.reduce((sum, co) => sum + magDb(co, f, DESIGN_FS), 0));
+}
+// K-weighted loudness (ITU-R BS.1770, ungated) from per-band power
+function loudness(powDb, addDb, extra) {
+  let s = 0;
+  for (let i = 0; i < powDb.length; i++) s += Math.pow(10, (powDb[i] + (addDb ? addDb[i] : 0) + (extra || 0) + DATA.kw[i]) / 10);
+  return -0.691 + 10 * Math.log10(s + 1e-20);
+}
+window.__eqmath = {coefs, magDb, eqCurve, loudness, BANDS};
+
+/* ---------- state ---------- */
+const blankEq = () => ({g: Array(NB).fill(0), level: 0});
+const S = {mic: 'flat', rec: 'singing', listen: 'input', scope: {}, eq: {}, applied: {}, guideHidden: false};
+MICS.forEach(m => { S.scope[m.id] = 'all'; S.eq[m.id] = {}; RECS.forEach(r => S.eq[m.id][r.id] = blankEq()); });
+let deviceToken = null;
+(function loadLocal() {
+  try {
+    const raw = localStorage.getItem(LS_KEY); if (!raw) return;
+    const o = JSON.parse(raw);
+    if (MICS.some(m => m.id === o.mic)) S.mic = o.mic;
+    if (RECS.some(r => r.id === o.rec)) S.rec = o.rec;
+    if (['input', 'ai', 'orig'].includes(o.listen)) S.listen = o.listen;
+    S.guideHidden = !!o.guideHidden;
+    MICS.forEach(m => {
+      if (o.scope && (o.scope[m.id] === 'one' || o.scope[m.id] === 'all')) S.scope[m.id] = o.scope[m.id];
+      RECS.forEach(r => {
+        const e = o.eq && o.eq[m.id] && o.eq[m.id][r.id];
+        if (e && Array.isArray(e.g) && e.g.length === NB && e.g.every(Number.isFinite) && Number.isFinite(e.level))
+          S.eq[m.id][r.id] = {g: e.g.map(v => clamp(v, -GMAX, GMAX)), level: clamp(e.level, -LMAX, LMAX)};
+      });
+    });
+    if (o.applied && typeof o.applied === 'object') S.applied = o.applied;
+  } catch (e) {}
+})();
+try { deviceToken = localStorage.getItem(LS_KEY + ':device'); if (!deviceToken) { deviceToken = 'd' + Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem(LS_KEY + ':device', deviceToken); } } catch (e) { deviceToken = null; }
+let saveTimer = 0;
+function saveLocal() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { try { localStorage.setItem(LS_KEY, JSON.stringify({mic: S.mic, rec: S.rec, listen: S.listen, scope: S.scope, eq: S.eq, applied: S.applied, guideHidden: S.guideHidden})); } catch (e) {} }, 300);
+}
+const cur = () => S.eq[S.mic][S.rec];
+const curItem = () => DATA.items[itemKey(S.rec, S.mic)];
+const targets = () => S.scope[S.mic] === 'all' ? RECS.map(r => r.id) : [S.rec];
+
+/* ---------- audio engine ---------- */
+const A = {ctx: null, g: null, bufs: new Map(), srcIn: null, srcAi: null, t0: 0, off: 0, dur: 0, pos: 0, playing: false, token: 0, loop: null, ready: false, raf: 0};
+let loopSel = null;  // {a, b} seconds
+function getCtx() {
+  if (A.ctx) return A.ctx;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  try { A.ctx = new AC({sampleRate: DESIGN_FS}); } catch (e) { A.ctx = new AC(); }
+  const ctx = A.ctx, master = ctx.createGain(), gIn = ctx.createGain(), gAi = ctx.createGain(), level = ctx.createGain();
+  master.connect(ctx.destination); gIn.connect(master); gAi.connect(master); level.connect(gAi);
+  const filters = BANDS.map(b => { const f = ctx.createBiquadFilter(); f.type = b.type; f.frequency.value = b.freq; if (b.q) f.Q.value = b.q; f.gain.value = 0; return f; });
+  filters.forEach((f, i) => f.connect(filters[i + 1] || level));
+  A.g = {master, gIn, gAi, level, filters};
+  applyListenToNodes(true); applyEqToNodes(true);
+  return ctx;
+}
+function setParam(p, v, instant) {
+  if (!A.ctx) return;
+  if (instant) { p.cancelScheduledValues(0); p.value = v; } else p.setTargetAtTime(v, A.ctx.currentTime, 0.008);
+}
+function applyListenToNodes(instant) {
+  if (!A.g) return;
+  setParam(A.g.gIn.gain, S.listen === 'input' ? 1 : 0, instant);
+  setParam(A.g.gAi.gain, S.listen === 'input' ? 0 : 1, instant);
+}
+function applyEqToNodes(instant) {
+  if (!A.g) return;
+  const e = cur(), flat = S.listen === 'orig';
+  A.g.filters.forEach((f, i) => setParam(f.gain, flat ? 0 : e.g[i], instant));
+  setParam(A.g.level.gain, flat ? 1 : Math.pow(10, e.level / 20), instant);
+}
+function decode(ab) {
+  const ctx = getCtx();
+  return new Promise((res, rej) => { const p = ctx.decodeAudioData(ab, res, rej); if (p && p.then) p.then(res, rej); });
+}
+function loadBuf(rec, mic, kind) {
+  const key = rec + '_' + mic + '_' + kind;
+  if (!A.bufs.has(key)) {
+    const p = fetch('audio/' + key + '.wav').then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); }).then(decode);
+    p.catch(() => A.bufs.delete(key));
+    A.bufs.set(key, p);
+  }
+  return A.bufs.get(key);
+}
+function loadPair(rec, mic) { return Promise.all([loadBuf(rec, mic, 'input'), loadBuf(rec, mic, 'ai')]); }
+function position() {
+  if (!A.playing || !A.ctx) return A.pos;
+  const el = A.ctx.currentTime - A.t0;
+  if (el <= 0) return A.off;
+  let p = A.off + el;
+  if (A.loop && p >= A.loop.b) p = A.loop.a + ((p - A.loop.b) % (A.loop.b - A.loop.a));
+  return Math.min(p, A.dur);
+}
+function stopSources() {
+  A.token++;
+  [A.srcIn, A.srcAi].forEach(s => { if (s) { try { s.onended = null; s.stop(); } catch (e) {} try { s.disconnect(); } catch (e) {} } });
+  A.srcIn = A.srcAi = null; A.playing = false;
+  cancelAnimationFrame(A.raf);
+}
+async function play(from) {
+  const ctx = getCtx();
+  if (ctx.state !== 'running') { try { await ctx.resume(); } catch (e) {} }
+  const want = itemKey(S.rec, S.mic);
+  let bufs;
+  try { bufs = await loadPair(S.rec, S.mic); } catch (e) { setLoadState('error'); return; }
+  if (want !== itemKey(S.rec, S.mic)) return;
+  const [bi, ba] = bufs;
+  stopSources();
+  const dur = Math.min(bi.duration, ba.duration);
+  let off = from != null ? from : A.pos;
+  const loop = loopSel ? {a: loopSel.a, b: Math.min(loopSel.b, dur)} : null;
+  if (loop && (off < loop.a || off >= loop.b)) off = loop.a;
+  if (!loop && off >= dur - 0.05) off = 0;
+  const tok = A.token;
+  const mk = (buf, dest) => { const s = ctx.createBufferSource(); s.buffer = buf; if (loop) { s.loop = true; s.loopStart = loop.a; s.loopEnd = loop.b; } s.connect(dest); return s; };
+  A.srcIn = mk(bi, A.g.gIn); A.srcAi = mk(ba, A.g.filters[0]);
+  const t0 = ctx.currentTime + 0.05;
+  A.srcIn.start(t0, off); A.srcAi.start(t0, off);
+  if (!loop) { A.srcIn.stop(t0 + dur - off); A.srcAi.stop(t0 + dur - off); }
+  A.t0 = t0; A.off = off; A.dur = dur; A.loop = loop; A.playing = true;
+  A.srcAi.onended = () => { if (tok === A.token) { A.playing = false; A.pos = 0; renderPlay(); drawWave(); } };
+  renderPlay(); tick();
+}
+function pause() { A.pos = position(); stopSources(); renderPlay(); drawWave(); }
+function togglePlay() { if (A.playing) pause(); else if (A.ready) play(); }
+function seek(t) {
+  t = clamp(t, 0, A.dur || curItem().dur);
+  if (A.playing) play(t); else { A.pos = t; drawWave(); renderTime(); }
+}
+function tick() {
+  cancelAnimationFrame(A.raf);
+  const step = () => { if (!A.playing) return; renderTime(); drawWave(); A.raf = requestAnimationFrame(step); };
+  A.raf = requestAnimationFrame(step);
+}
+function setLoadState(st) {
+  const el = $('#load-state');
+  el.classList.toggle('err', st === 'error');
+  el.textContent = st === 'loading' ? 'Loading recording…' : st === 'error' ? 'This recording did not load. Check your connection, then pick it again.' : '';
+  $('#btn-play').disabled = st !== 'ready';
+}
+async function prepareCurrent() {
+  A.ready = false; setLoadState('loading');
+  const want = itemKey(S.rec, S.mic);
+  try {
+    const [bi, ba] = await loadPair(S.rec, S.mic);
+    if (want !== itemKey(S.rec, S.mic)) return;
+    A.dur = Math.min(bi.duration, ba.duration); A.ready = true; setLoadState('ready'); renderTime();
+    // warm the other mic's version of this recording and the main singing pair
+    setTimeout(() => { MICS.forEach(m => loadPair(S.rec, m.id).catch(() => {})); loadPair('singing', S.mic).catch(() => {}); }, 400);
+  } catch (e) { if (want === itemKey(S.rec, S.mic)) setLoadState('error'); }
+}
+
+/* ---------- selection ---------- */
+function selectMic(mic) {
+  if (mic === S.mic) return;
+  stopSources(); A.pos = 0; A.dur = 0; loopSel = null; S.mic = mic; saveLocal(); renderAll(); prepareCurrent();
+}
+function selectRec(rec) {
+  if (rec === S.rec) return;
+  stopSources(); A.pos = 0; A.dur = 0; loopSel = null; S.rec = rec; saveLocal(); renderAll(); prepareCurrent();
+}
+function setListen(mode) {
+  S.listen = mode; applyListenToNodes(false); applyEqToNodes(false); renderListen(); saveLocal();
+}
+
+/* ---------- EQ edits ---------- */
+function setGain(i, v) {
+  v = clamp(snap(v), -GMAX, GMAX);
+  targets().forEach(r => { S.eq[S.mic][r].g[i] = v; });
+  afterEqChange();
+}
+function setLevel(v) {
+  v = clamp(Math.round(v * 10) / 10, -LMAX, LMAX);
+  targets().forEach(r => { S.eq[S.mic][r].level = v; });
+  afterEqChange();
+}
+function setAll(g, level, scopeRecs) {
+  (scopeRecs || targets()).forEach(r => { S.eq[S.mic][r] = {g: g.slice(), level}; });
+}
+let chartQueued = false;
+function afterEqChange() {
+  if (S.listen === 'orig') { S.listen = 'ai'; applyListenToNodes(false); renderListen(); }
+  applyEqToNodes(false); renderSliders(); renderLevel(); renderRecList(); renderApplied(); saveLocal();
+  if (!chartQueued) { chartQueued = true; requestAnimationFrame(() => { chartQueued = false; renderChart(); }); }
+}
+function matchLevel() {
+  const it = curItem(), e = cur();
+  const eq = eqCurve(e.g, DATA.centers);
+  const need = it.inLoud - loudness(it.aiDb, eq, 0);
+  setLevel(need);
+  toast('Loudness matched on ' + recName(S.rec) + '.');
+}
+function suggest() {
+  const g = S.scope[S.mic] === 'all' ? DATA.suggestAll[S.mic] : curItem().suggest;
+  const it = curItem(), eq = eqCurve(g, DATA.centers);
+  const level = clamp(Math.round((it.inLoud - loudness(it.aiDb, eq, 0)) * 10) / 10, -LMAX, LMAX);
+  setAll(g, level);
+  afterEqChange();
+  toast('Sliders set to a suggested match. Now fine-tune by ear.');
+}
+function resetEq() { setAll(Array(NB).fill(0), 0); afterEqChange(); toast('All sliders and the level are back to 0.'); }
+function setScope(sc) {
+  if (S.scope[S.mic] === sc) return;
+  S.scope[S.mic] = sc;
+  if (sc === 'all') { const e = cur(); setAll(e.g, e.level, RECS.map(r => r.id)); toast('The same EQ now plays on all 4 ' + micName(S.mic) + ' recordings.'); }
+  renderAll(); saveLocal();
+}
+
+/* ---------- rendering ---------- */
+function radioSet(container, attr, val) {
+  container.querySelectorAll('[role=radio]').forEach(b => { const on = b.dataset[attr] === val; b.setAttribute('aria-checked', on ? 'true' : 'false'); b.tabIndex = on ? 0 : -1; });
+}
+function renderMic() {
+  const seg = $('#mic-seg');
+  if (!seg.children.length) MICS.forEach(m => { const b = document.createElement('button'); b.type = 'button'; b.setAttribute('role', 'radio'); b.dataset.mic = m.id; b.textContent = m.name; b.addEventListener('click', () => selectMic(m.id)); seg.appendChild(b); });
+  radioSet(seg, 'mic', S.mic);
+}
+const isFlatEq = e => e.level === 0 && e.g.every(v => v === 0);
+function renderRecList() {
+  const nav = $('#rec-list');
+  if (!nav.children.length) RECS.forEach(r => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'navitem'; b.dataset.rec = r.id;
+    const nm = document.createElement('span'); nm.textContent = r.name;
+    const meta = document.createElement('span'); meta.className = 'nav-meta';
+    if (r.id === 'singing') { const c = document.createElement('span'); c.className = 'chip chip-accent'; c.textContent = 'Main'; meta.appendChild(c); }
+    const dot = document.createElement('span'); dot.className = 'eqdot'; dot.title = 'EQ changed'; dot.setAttribute('aria-label', 'EQ changed'); meta.appendChild(dot);
+    const d = document.createElement('span'); d.className = 'dur'; meta.appendChild(d);
+    b.append(nm, meta); b.addEventListener('click', () => selectRec(r.id)); nav.appendChild(b);
+  });
+  nav.querySelectorAll('.navitem').forEach(b => {
+    const r = b.dataset.rec;
+    if (r === S.rec) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    b.querySelector('.dur').textContent = fmtTime(DATA.items[itemKey(r, S.mic)].dur);
+    b.querySelector('.eqdot').hidden = isFlatEq(S.eq[S.mic][r]);
+  });
+}
+function renderHeads() {
+  $('#p-rec').textContent = recName(S.rec);
+  $('#p-mic').textContent = micName(S.mic);
+  $('#eq-mic').textContent = micName(S.mic);
+  $('#sc-one').textContent = 'Only ' + recName(S.rec);
+  $('#sc-all').textContent = 'All 4 recordings on ' + micName(S.mic);
+  radioSet($('#scope-seg'), 'scope', S.scope[S.mic]);
+}
+function renderListen() { radioSet($('#listen-seg'), 'listen', S.listen); }
+function renderPlay() {
+  $('#ic-play').hidden = A.playing; $('#ic-pause').hidden = !A.playing;
+  $('#play-label').textContent = A.playing ? 'Pause' : 'Play';
+  $('#btn-play').setAttribute('aria-label', A.playing ? 'Pause' : 'Play');
+  renderTime();
+}
+function renderTime() {
+  const d = A.dur || curItem().dur, p = position();
+  $('#time').textContent = fmtTime(p) + ' / ' + fmtTime(d);
+  const w = $('#wave'); w.setAttribute('aria-valuemax', Math.round(d)); w.setAttribute('aria-valuenow', Math.round(p)); w.setAttribute('aria-valuetext', fmtTime(p) + ' of ' + fmtTime(d));
+}
+function buildSliders() {
+  const wrap = $('#bands');
+  BANDS.forEach((b, i) => {
+    const col = document.createElement('div'); col.className = 'band';
+    col.innerHTML = '<output class="band-val" id="bv' + i + '"></output>' +
+      '<div class="vs" role="slider" tabindex="0" id="bs' + i + '" aria-orientation="vertical" aria-valuemin="-12" aria-valuemax="12">' +
+      '<div class="vs-track"><div class="vs-zero"></div><div class="vs-fill"></div></div><div class="vs-thumb"></div></div>' +
+      '<div class="band-word"></div><div class="band-hz"></div>';
+    col.querySelector('.band-word').textContent = b.word;
+    col.querySelector('.band-hz').textContent = fmtHz(b.freq);
+    const vs = col.querySelector('.vs');
+    vs.setAttribute('aria-label', b.word + ', ' + fmtHz(b.freq));
+    vs.title = b.word + ' · ' + fmtHz(b.freq) + '. ' + b.hint + ' Double-click to reset to 0.';
+    const fromY = y => { const r = vs.querySelector('.vs-track').getBoundingClientRect(); return -GMAX + (1 - (y - r.top) / r.height) * 2 * GMAX; };
+    let dragging = false;
+    vs.addEventListener('pointerdown', e => { if (e.button !== 0) return; dragging = true; vs.setPointerCapture(e.pointerId); vs.focus(); setGain(i, fromY(e.clientY)); e.preventDefault(); });
+    vs.addEventListener('pointermove', e => { if (dragging) setGain(i, fromY(e.clientY)); });
+    const end = () => { dragging = false; };
+    vs.addEventListener('pointerup', end); vs.addEventListener('pointercancel', end);
+    vs.addEventListener('dblclick', () => setGain(i, 0));
+    vs.addEventListener('keydown', e => {
+      const v = cur().g[i]; let n = null;
+      if (e.key === 'ArrowUp' || e.key === 'ArrowRight') n = v + STEP;
+      else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') n = v - STEP;
+      else if (e.key === 'PageUp') n = v + 3; else if (e.key === 'PageDown') n = v - 3;
+      else if (e.key === 'Home') n = GMAX; else if (e.key === 'End') n = -GMAX; else if (e.key === '0') n = 0;
+      if (n != null) { setGain(i, n); e.preventDefault(); }
+    });
+    wrap.appendChild(col);
+  });
+}
+function renderSliders() {
+  const e = cur();
+  BANDS.forEach((b, i) => {
+    const v = e.g[i], vs = $('#bs' + i), pct = (1 - (v + GMAX) / (2 * GMAX)) * 100;
+    vs.querySelector('.vs-thumb').style.top = 'calc(9px + (100% - 18px) * ' + (pct / 100) + ')';
+    const fill = vs.querySelector('.vs-fill');
+    fill.style.top = Math.min(pct, 50) + '%'; fill.style.bottom = (100 - Math.max(pct, 50)) + '%';
+    vs.setAttribute('aria-valuenow', v); vs.setAttribute('aria-valuetext', fmtDb(v) + ' dB');
+    const out = $('#bv' + i); out.textContent = fmtDb(v); out.classList.toggle('zero', v === 0);
+  });
+}
+function renderLevel() {
+  const e = cur(), it = curItem();
+  $('#level').value = e.level; $('#level-val').textContent = fmtDb(e.level) + ' dB';
+  const ai = loudness(it.aiDb, eqCurve(e.g, DATA.centers), e.level), d = ai - it.inLoud;
+  const loud = $('#loud'); loud.textContent = '';
+  const part = (label, v) => { const s = document.createElement('span'); s.append(label + ' '); const b = document.createElement('b'); b.textContent = fmtDb(v).replace('+', '') + ' LUFS'; s.appendChild(b); return s; };
+  const chip = document.createElement('span');
+  if (Math.abs(d) <= 0.3) { chip.className = 'chip chip-ok'; chip.innerHTML = '<span class="dot"></span>'; chip.append('Loudness matched'); }
+  else { chip.className = 'chip chip-warn'; chip.innerHTML = '<span class="dot"></span>'; chip.append('AI is ' + Math.abs(d).toFixed(1) + ' dB ' + (d < 0 ? 'quieter' : 'louder')); }
+  loud.append(part('Your mic', it.inLoud), part('AI + EQ', ai), chip);
+}
+function renderApplied() {
+  const el = $('#applied'), a = S.applied[itemKey(S.rec, S.mic)];
+  el.textContent = '';
+  if (!a) return;
+  const e = cur(), same = a.level === e.level && a.g.every((v, i) => v === e.g[i]);
+  el.append('Using '); const b = document.createElement('b'); b.textContent = a.name; el.appendChild(b); if (!same) el.append(' · changed since');
+}
+function renderAll() { renderMic(); renderRecList(); renderHeads(); renderListen(); renderPlay(); renderSliders(); renderLevel(); renderApplied(); renderChart(); drawWave(); }
+
+/* ---------- waveform ---------- */
+const wave = $('#wave');
+let waveDrag = null;
+function drawWave() {
+  const it = curItem(), dpr = window.devicePixelRatio || 1;
+  const w = wave.clientWidth, h = wave.clientHeight; if (!w || !h) return;
+  if (wave.width !== Math.round(w * dpr) || wave.height !== Math.round(h * dpr)) { wave.width = Math.round(w * dpr); wave.height = Math.round(h * dpr); }
+  const c = wave.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, w, h);
+  const d = it.dur, p = position(), px = d ? p / d * w : 0, pk = it.peaks, n = pk.length;
+  const sel = waveDrag && waveDrag.moved ? waveDrag.sel : loopSel;
+  if (sel) { c.fillStyle = cssVar('--accent-soft'); c.fillRect(sel.a / d * w, 0, (sel.b - sel.a) / d * w, h); }
+  const acc = cssVar('--accent'), mute = cssVar('--text-4'), bar = 2, gap = 1;
+  for (let x = 0; x < w; x += bar + gap) {
+    const i0 = Math.floor(x / w * n), i1 = Math.max(i0 + 1, Math.floor((x + bar) / w * n));
+    let m = 0; for (let i = i0; i < i1 && i < n; i++) m = Math.max(m, pk[i]);
+    const bh = Math.max(2, m * (h - 12));
+    c.fillStyle = x < px ? acc : mute;
+    c.fillRect(x, (h - bh) / 2, bar, bh);
+  }
+  if (sel) { c.fillStyle = acc; c.fillRect(sel.a / d * w - 1, 0, 2, h); c.fillRect(sel.b / d * w - 1, 0, 2, h); }
+  c.fillStyle = cssVar('--text'); c.fillRect(Math.round(px) - 1, 0, 2, h);
+  $('#btn-loop-clear').hidden = !loopSel;
+  $('#loop-hint').textContent = loopSel ? 'Repeating ' + fmtTime(loopSel.a) + ' to ' + fmtTime(loopSel.b) + '.' : 'Tap the waveform to jump. Drag across it to repeat one part.';
+}
+const xToT = x => clamp(x / wave.clientWidth, 0, 1) * curItem().dur;
+wave.addEventListener('pointerdown', e => { if (e.button !== 0) return; wave.setPointerCapture(e.pointerId); waveDrag = {x0: e.offsetX, moved: false, sel: null}; });
+wave.addEventListener('pointermove', e => {
+  if (!waveDrag) return;
+  if (Math.abs(e.offsetX - waveDrag.x0) > 6) waveDrag.moved = true;
+  if (waveDrag.moved) { const a = xToT(Math.min(e.offsetX, waveDrag.x0)), b = xToT(Math.max(e.offsetX, waveDrag.x0)); waveDrag.sel = {a, b}; drawWave(); }
+});
+wave.addEventListener('pointerup', e => {
+  if (!waveDrag) return;
+  const dr = waveDrag; waveDrag = null;
+  if (!dr.moved) { seek(xToT(e.offsetX)); return; }
+  if (dr.sel && dr.sel.b - dr.sel.a >= 0.5) { loopSel = dr.sel; if (A.playing) play(loopSel.a); else { A.pos = loopSel.a; } }
+  drawWave(); renderTime();
+});
+wave.addEventListener('pointercancel', () => { waveDrag = null; drawWave(); });
+wave.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight') { seek(position() + 5); e.preventDefault(); }
+  else if (e.key === 'ArrowLeft') { seek(position() - 5); e.preventDefault(); }
+  else if (e.key === 'Home') { seek(0); e.preventDefault(); }
+});
+$('#btn-loop-clear').addEventListener('click', () => { const p = position(); loopSel = null; if (A.playing) play(p); drawWave(); });
+
+/* ---------- match picture ---------- */
+const FMIN = 100, FMAX = 7600;
+const chartIdx = DATA.centers.map((f, i) => i).filter(i => DATA.centers[i] >= FMIN && DATA.centers[i] <= FMAX);
+let chartGeo = null;
+function currentDiff() {
+  const it = curItem(), e = cur(), eq = eqCurve(e.g, DATA.centers);
+  const raw = chartIdx.map(i => it.aiDb[i] + eq[i] + e.level - it.inDb[i]);
+  return raw.map((v, k) => { let s = 0, n = 0; for (let j = k - 2; j <= k + 2; j++) if (j >= 0 && j < raw.length) { s += raw[j]; n++; } return s / n; });
+}
+function nearestBand(f) { let bi = 0, bd = 1e9; BANDS.forEach((b, i) => { const d = Math.abs(Math.log2(f / b.freq)); if (d < bd) { bd = d; bi = i; } }); return bi; }
+function renderChart() {
+  const svg = $('#chart'), wrap = $('#chart-wrap'), W = Math.max(280, wrap.clientWidth), H = 250;
+  const narrow = W < 460, ml = 34, mr = 8, mt = 18, mb = narrow ? 26 : 40;
+  const pw = W - ml - mr, ph = H - mt - mb;
+  const x = f => ml + (Math.log(f / FMIN) / Math.log(FMAX / FMIN)) * pw;
+  const y = v => mt + (1 - (clamp(v, -12, 12) + 12) / 24) * ph;
+  const diff = currentDiff(), fs = chartIdx.map(i => DATA.centers[i]);
+  chartGeo = {x, y, diff, fs, ml, pw};
+  let s = '';
+  [-12, -6, 0, 6, 12].forEach(v => { s += '<line class="' + (v === 0 ? 'c-zero' : 'c-grid') + '" x1="' + ml + '" x2="' + (W - mr) + '" y1="' + y(v) + '" y2="' + y(v) + '"/>';
+    s += '<text class="c-axis" x="' + (ml - 6) + '" y="' + (y(v) + 4) + '" text-anchor="end">' + (v > 0 ? '+' + v : v < 0 ? '−' + (-v) : '0') + '</text>'; });
+  s += '<rect class="c-band" x="' + ml + '" y="' + y(1) + '" width="' + pw + '" height="' + (y(-1) - y(1)) + '"/>';
+  s += '<text class="c-note" x="' + (ml + 4) + '" y="' + (mt - 6) + '">AI louder than your mic (dB)</text>';
+  s += '<text class="c-note" x="' + (ml + 4) + '" y="' + (y(-12) - 4) + '">AI quieter</text>';
+  const pts = diff.map((v, k) => x(fs[k]).toFixed(1) + ',' + y(v).toFixed(1));
+  s += '<path class="c-area" d="M' + x(fs[0]).toFixed(1) + ',' + y(0) + 'L' + pts.join('L') + 'L' + x(fs[fs.length - 1]).toFixed(1) + ',' + y(0) + 'Z"/>';
+  s += '<path class="c-line" d="M' + pts.join('L') + '"/>';
+  BANDS.forEach(b => { const bx = x(b.freq);
+    s += '<line class="c-tick" x1="' + bx + '" x2="' + bx + '" y1="' + (mt + ph) + '" y2="' + (mt + ph + 4) + '"/>';
+    s += '<text class="c-axis" x="' + bx + '" y="' + (mt + ph + 16) + '" text-anchor="middle">' + fmtHzShort(b.freq) + '</text>';
+    if (!narrow) s += '<text class="c-word" x="' + bx + '" y="' + (mt + ph + 31) + '" text-anchor="middle">' + b.word + '</text>'; });
+  s += '<g id="c-hover" visibility="hidden"><line class="c-cross" id="c-cross" y1="' + mt + '" y2="' + (mt + ph) + '"/><circle class="c-dot" id="c-dot" r="4.5"/></g>';
+  s += '<rect class="c-hit" id="c-hit" x="' + ml + '" y="' + mt + '" width="' + pw + '" height="' + ph + '"/>';
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  svg.innerHTML = s;
+  // summary
+  const avg = diff.reduce((a, v) => a + Math.abs(v), 0) / diff.length;
+  let wk = 0; diff.forEach((v, k) => { if (Math.abs(v) > Math.abs(diff[wk])) wk = k; });
+  const sc = $('#score'); sc.textContent = '';
+  const chip = document.createElement('span'); chip.innerHTML = '<span class="dot"></span>';
+  if (avg <= 0.75) { chip.className = 'chip chip-ok'; chip.append('Very close'); } else if (avg <= 1.5) { chip.className = 'chip chip-warn'; chip.append('Close'); } else { chip.className = 'chip chip-bad'; chip.append('Not there yet'); }
+  const num = document.createElement('span'); num.className = 'cap'; num.textContent = 'avg gap ' + avg.toFixed(1) + ' dB';
+  sc.append(chip, num);
+  svg.setAttribute('aria-label', 'Match picture for ' + recName(S.rec) + ' on ' + micName(S.mic) + ': average gap ' + avg.toFixed(1) + ' dB; biggest gap near ' + fmtHz(Math.round(fs[wk])) + ' where the AI is ' + Math.abs(diff[wk]).toFixed(1) + ' dB ' + (diff[wk] < 0 ? 'quieter' : 'louder') + '.');
+  $('#c-hit').addEventListener('pointermove', chartHover);
+  $('#c-hit').addEventListener('pointerdown', chartHover);
+  $('#c-hit').addEventListener('pointerleave', e => { if (e.pointerType === 'touch') return; $('#c-hover').setAttribute('visibility', 'hidden'); $('#tip').hidden = true; });
+}
+function chartHover(e) {
+  const g = chartGeo, svg = $('#chart'), r = svg.getBoundingClientRect();
+  const sx = (e.clientX - r.left) * (svg.viewBox.baseVal.width / r.width);
+  let k = 0, bd = 1e9; g.fs.forEach((f, i) => { const d = Math.abs(g.x(f) - sx); if (d < bd) { bd = d; k = i; } });
+  const f = g.fs[k], v = g.diff[k], cx = g.x(f), cy = g.y(v);
+  $('#c-cross').setAttribute('x1', cx); $('#c-cross').setAttribute('x2', cx);
+  $('#c-dot').setAttribute('cx', cx); $('#c-dot').setAttribute('cy', cy);
+  $('#c-hover').setAttribute('visibility', 'visible');
+  const b = BANDS[nearestBand(f)], tip = $('#tip');
+  tip.textContent = '';
+  const l1 = document.createElement('div'); const bf = document.createElement('b'); bf.textContent = fmtHz(f >= 1000 ? Math.round(f / 100) * 100 : Math.round(f / 5) * 5); l1.append(bf, ' · ');
+  l1.append(Math.abs(v) < 0.25 ? 'same as your mic' : 'AI is ' + Math.abs(v).toFixed(1) + ' dB ' + (v < 0 ? 'quieter' : 'louder'));
+  const l2 = document.createElement('div'); l2.className = 'hint';
+  l2.textContent = Math.abs(v) <= 1 ? 'Inside the matched band.' : 'Try ' + (v < 0 ? 'raising ' : 'lowering ') + b.word + ' (' + fmtHz(b.freq) + ').';
+  tip.append(l1, l2); tip.hidden = false;
+  const scale = r.width / svg.viewBox.baseVal.width, tw = tip.offsetWidth;
+  tip.style.left = clamp(cx * scale - tw / 2, 0, r.width - tw) + 'px';
+  tip.style.top = Math.max(0, cy * scale - tip.offsetHeight - 12) + 'px';
+}
+
+/* ---------- toast & dialogs ---------- */
+let toastTimer = 0;
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 3200); }
+function openDlg(id) { const d = $(id); if (!d.open) { try { d.showModal(); } catch (e) { d.setAttribute('open', ''); } } return d; }
+function closeDlg(d) { try { d.close(); } catch (e) { d.removeAttribute('open'); } }
+document.querySelectorAll('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d || e.target.closest('[data-close]')) closeDlg(d); }));
+function valsGrid(el, g, level) {
+  el.textContent = '';
+  BANDS.forEach((b, i) => { const d = document.createElement('div'); const s = document.createElement('span'); s.textContent = fmtHz(b.freq) + ' ' + b.word; const v = document.createElement('b'); v.textContent = fmtDb(g[i]) + ' dB'; d.append(s, v); el.appendChild(d); });
+  const d = document.createElement('div'); const s = document.createElement('span'); s.textContent = 'Level'; const v = document.createElement('b'); v.textContent = fmtDb(level) + ' dB'; d.append(s, v); el.appendChild(d);
+}
+
+/* ---------- exports (frequency-exact) ---------- */
+function filtersOf(g) { return BANDS.map((b, i) => Object.assign({type: b.type, freqHz: b.freq, gainDb: g[i]}, b.q ? {q: b.q} : {slope: 1})); }
+function gainsFromRecord(r) {
+  const f = Array.isArray(r.filters) ? r.filters : [];
+  const g = BANDS.map(b => { const m = f.find(x => x && x.type === b.type && Number(x.freqHz) === b.freq); return m && Number.isFinite(Number(m.gainDb)) ? clamp(Number(m.gainDb), -GMAX, GMAX) : 0; });
+  const extra = f.filter(x => !BANDS.some(b => x && x.type === b.type && Number(x.freqHz) === b.freq)).length;
+  return {g, level: Number.isFinite(Number(r.levelDb)) ? clamp(Number(r.levelDb), -LMAX, LMAX) : 0, extra};
+}
+function exportRecord(r) {
+  return {name: r.name, mic: r.mic, micName: micName(r.mic), appliesTo: r.appliesTo === 'all' ? 'all recordings on this mic' : 'one recording', madeOn: recName(r.madeOn),
+    levelDb: r.levelDb, filters: r.filters, note: r.note || '', savedBy: r.savedBy || '', savedAt: r.createdAt || ''};
+}
+function jsonDoc(list) {
+  return JSON.stringify({format: 'iphipi-vocal-eq', formatVersion: EQ_FORMAT, dashboardVersion: APP_VERSION, exportedAt: new Date().toISOString(), designSampleRateHz: DESIGN_FS,
+    howToApply: 'Apply the filters in the listed order, then the level gain (dB). Biquads follow the RBJ Audio EQ Cookbook, identical to Web Audio BiquadFilterNode: peaking uses q; highshelf/lowshelf use slope S=1. The dashboard runs at 16 kHz, the same rate as the AI model output.',
+    eqs: list.map(r => exportRecord(r))}, null, 2);
+}
+const csvCell = v => { const s = v == null ? '' : String(v); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+function csvDoc(list) {
+  const head = ['name', 'mic', 'applies_to', 'made_on', ...BANDS.map(b => 'gain_db_' + b.freq + 'Hz_' + (b.type === 'peaking' ? 'peak_q' + b.q : b.type + '_s1')), 'level_db', 'saved_by', 'saved_at', 'note', 'format_version'];
+  const rows = list.map(r => { const x = gainsFromRecord(r); return [r.name, micName(r.mic), r.appliesTo === 'all' ? 'all recordings' : 'one recording', recName(r.madeOn), ...x.g, x.level, r.savedBy || '', r.createdAt || '', r.note || '', r.formatVersion || EQ_FORMAT]; });
+  return [head, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
+function offerFile(filename, text) {
+  try {
+    const type = filename.endsWith('.csv') ? 'text/csv;charset=utf-8' : 'application/json';
+    const url = URL.createObjectURL(new Blob([text], {type}));
+    const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    toast('Downloaded ' + filename);
+  } catch (e) { $('#copy-h').textContent = 'Copy ' + filename; $('#copy-text').value = text; openDlg('#dlg-copy'); }
+}
+$('#copy-go').addEventListener('click', async () => {
+  const ta = $('#copy-text');
+  try { await navigator.clipboard.writeText(ta.value); toast('Copied. Paste it into a new file.'); }
+  catch (e) { ta.focus(); ta.select(); toast('Text selected. Press Ctrl+C (or Cmd+C) to copy.'); }
+});
+
+/* ---------- shared saved list (Google Sheet web app) ---------- */
+const API = ((window.EQ_CONFIG && window.EQ_CONFIG.sheetApi) || '').trim();
+const caps = {state: API ? 'loading' : 'none', ownerCode: null};
+let saved = [], savedFilter = 'all', savedQuery = '', myHash = null, pollTimer = 0;
+try { caps.ownerCode = localStorage.getItem(LS_KEY + ':owner') || null; } catch (e) {}
+function keyFor(name) {
+  const s = name.trim().toLowerCase().replace(/\s+/g, ' ');
+  let out = '';
+  for (const ch of s) { if (/[a-z0-9]/.test(ch)) out += ch; else if (ch === ' ' || ch === '-' || ch === '_') out += '-'; else out += '~' + ch.codePointAt(0).toString(16); }
+  return 'eq-' + out.slice(0, 180);
+}
+async function sha(s) {
+  try { const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)); return btoa(String.fromCharCode(...new Uint8Array(d))); } catch (e) { return null; }
+}
+async function apiGet() {
+  let r;
+  try { r = await fetch(API + (API.includes('?') ? '&' : '?') + 'action=list&t=' + Date.now(), {cache: 'no-store'}); } catch (e) { throw {code: 'unavailable'}; }
+  if (!r.ok) throw {code: 'unavailable'};
+  const j = await r.json(); if (!j.ok) throw {code: j.error || 'unavailable'};
+  return j.eqs || [];
+}
+async function apiPost(body) {
+  let r;
+  try { r = await fetch(API, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify(body)}); } catch (e) { throw {code: 'unavailable'}; }
+  if (!r.ok) throw {code: 'unavailable'};
+  let j; try { j = await r.json(); } catch (e) { throw {code: 'unavailable'}; }
+  if (!j.ok) throw {code: j.error || 'unavailable'};
+  return j;
+}
+async function refreshSaved() {
+  if (!API) return;
+  try {
+    const list = await apiGet();
+    saved = list.filter(r => r && typeof r.name === 'string' && r.name && Array.isArray(r.filters))
+      .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+    caps.state = 'ready';
+  } catch (e) { if (caps.state !== 'ready') caps.state = 'error'; }
+  accessBanner(); renderSaved();
+}
+function accessBanner() {
+  const el = $('#banner-access'), t = $('#banner-access-text');
+  let msg = '';
+  if (!API) msg = 'Saving to the shared list is not connected yet. You can still listen, try EQs and download them as a file.';
+  else if (caps.state === 'error') msg = 'The saved list did not load. Check your internet connection. It retries every 30 seconds.';
+  el.hidden = !msg; t.textContent = msg;
+}
+async function initCaps() {
+  myHash = deviceToken ? await sha(deviceToken) : null;
+  accessBanner(); renderSaved(); renderOwner();
+  if (!API) return;
+  await refreshSaved();
+  pollTimer = setInterval(() => { if (document.visibilityState === 'visible') refreshSaved(); }, 30000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshSaved(); });
+}
+const isMine = r => !!(myHash && r.ownerHash && r.ownerHash === myHash);
+const canDelete = r => !!caps.ownerCode || isMine(r);
+function fmtDate(iso) { const d = new Date(iso); if (isNaN(d)) return ''; return d.toLocaleDateString(undefined, {day: 'numeric', month: 'short', year: 'numeric'}) + ', ' + d.toLocaleTimeString(undefined, {hour: '2-digit', minute: '2-digit'}); }
+function renderSaved() {
+  const body = $('#saved-body');
+  $('#saved-count').textContent = saved.length + ' saved';
+  const empty = (h, p) => { body.innerHTML = '<div class="empty"><h3></h3><p></p></div>'; body.querySelector('h3').textContent = h; body.querySelector('p').textContent = p; };
+  if (caps.state === 'loading') { empty('Loading saved EQs…', 'Saved EQs from everyone appear here.'); return; }
+  if (caps.state === 'none') { empty('Saving is not connected yet', 'The owner still needs to connect the Google Sheet. You can already download your EQ from Save EQ.'); return; }
+  if (caps.state === 'error' && !saved.length) { empty('Saved EQs did not load', 'Check your internet connection. The list retries every 30 seconds.'); return; }
+  const q = savedQuery.trim().toLowerCase();
+  const list = saved.filter(r => (savedFilter === 'all' || r.mic === savedFilter) && (!q || r.name.toLowerCase().includes(q) || String(r.note || '').toLowerCase().includes(q) || String(r.savedBy || '').toLowerCase().includes(q)));
+  if (!saved.length) { empty('No saved EQs yet', 'When the AI sounds like your mic, press Save EQ and give it a name. Everyone with the link will see it here.'); return; }
+  if (!list.length) { empty('No saved EQs match', 'Clear the search or choose All to see every saved EQ.'); return; }
+  const wrap = document.createElement('div'); wrap.className = 'tbl-wrap';
+  const t = document.createElement('table'); t.className = 'tbl';
+  t.innerHTML = '<thead><tr><th>Name</th><th>Mic</th><th>Made on</th>' + BANDS.map(b => '<th class="num">' + b.word + '<span class="hz">' + fmtHz(b.freq) + '</span></th>').join('') + '<th class="num">Level<span class="hz">dB</span></th><th>Saved by</th><th>Saved</th><th class="num">Actions</th></tr></thead>';
+  const tb = document.createElement('tbody');
+  list.forEach(r => {
+    const x = gainsFromRecord(r), tr = document.createElement('tr');
+    const td = (cls, txt) => { const c = document.createElement('td'); if (cls) c.className = cls; if (txt != null) c.textContent = txt; tr.appendChild(c); return c; };
+    const n = td('name', r.name); if (r.note) { const s = document.createElement('span'); s.className = 'note'; s.textContent = r.note; n.appendChild(s); }
+    const mc = td(null); const chip = document.createElement('span'); chip.className = 'chip chip-plain'; chip.textContent = micName(r.mic); mc.appendChild(chip);
+    td(null, r.appliesTo === 'all' ? 'All 4 recordings' : recName(r.madeOn));
+    x.g.forEach(v => td('num' + (v === 0 ? ' zero' : ''), fmtDb(v)));
+    td('num' + (x.level === 0 ? ' zero' : ''), fmtDb(x.level));
+    td('who-cell', (r.savedBy || 'Someone') + (isMine(r) ? ' (you)' : ''));
+    td('who-cell', fmtDate(r.createdAt));
+    const ac = td(null); const box = document.createElement('div'); box.className = 'acts'; ac.appendChild(box);
+    const mkBtn = (label, cls, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn btn-sm ' + cls; b.textContent = label; b.addEventListener('click', fn); box.appendChild(b); };
+    mkBtn('Apply', 'btn-primary', () => openApply(r));
+    mkBtn('Download', 'btn-ghost', () => offerFile(r.id + '.json', jsonDoc([r])));
+    if (canDelete(r)) mkBtn('Delete', 'btn-ghost', () => openDelete(r));
+    tb.appendChild(tr);
+  });
+  t.appendChild(tb); wrap.appendChild(t);
+  body.textContent = ''; body.appendChild(wrap);
+}
+$('#filter-seg').addEventListener('click', e => { const b = e.target.closest('[data-filter]'); if (!b) return; savedFilter = b.dataset.filter; radioSet($('#filter-seg'), 'filter', savedFilter); renderSaved(); });
+$('#saved-search').addEventListener('input', e => { savedQuery = e.target.value; renderSaved(); });
+$('#dl-csv').addEventListener('click', () => { if (!saved.length) { toast('Nothing saved yet.'); return; } offerFile('saved-eqs.csv', '﻿' + csvDoc(saved)); });
+$('#dl-json').addEventListener('click', () => { if (!saved.length) { toast('Nothing saved yet.'); return; } offerFile('saved-eqs.json', jsonDoc(saved)); });
+
+/* save */
+function currentRecord(name, note, by) {
+  const e = cur();
+  return {name, key: keyFor(name), note, mic: S.mic, appliesTo: S.scope[S.mic], madeOn: S.rec, levelDb: e.level, filters: filtersOf(e.g),
+    savedBy: by || 'Someone', createdAt: new Date().toISOString(), formatVersion: EQ_FORMAT, dashboardVersion: APP_VERSION, designSampleRateHz: DESIGN_FS};
+}
+function openSave() {
+  const e = cur();
+  $('#save-desc').textContent = micName(S.mic) + ' · ' + (S.scope[S.mic] === 'all' ? 'all 4 recordings (made on ' + recName(S.rec) + ')' : 'made on ' + recName(S.rec)) + '. Everyone with the link will see it in the saved list.';
+  valsGrid($('#save-vals'), e.g, e.level);
+  $('#save-err').textContent = '';
+  try { const by = localStorage.getItem(LS_KEY + ':name'); if (by && !$('#eq-by').value) $('#eq-by').value = by; } catch (x) {}
+  const writable = API && caps.state === 'ready';
+  $('#save-go').hidden = !writable;
+  if (!writable) $('#save-err').textContent = !API ? 'Saving to the shared list is not connected yet. Download this EQ as a file instead.' : caps.state === 'loading' ? 'The saved list is still loading. Try again in a moment, or download the EQ as a file.' : 'The saved list cannot be reached right now. Download this EQ as a file instead.';
+  $('#save-go').disabled = false; $('#save-go').textContent = 'Save EQ';
+  openDlg('#dlg-save'); setTimeout(() => $('#eq-name').focus(), 30);
+}
+$('#save-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const name = $('#eq-name').value.trim().replace(/\s+/g, ' '), note = $('#eq-note').value.trim(), by = $('#eq-by').value.trim(), err = $('#save-err');
+  if (!name) { err.textContent = 'Type a name for this EQ.'; $('#eq-name').focus(); return; }
+  if (!by) { err.textContent = 'Type your name so others know who saved it.'; $('#eq-by').focus(); return; }
+  try { localStorage.setItem(LS_KEY + ':name', by); } catch (x) {}
+  const key = keyFor(name);
+  const dupMsg = 'The name “' + name + '” is already used. Please choose a different name.';
+  if (saved.some(r => r.id === key)) { err.textContent = dupMsg; $('#eq-name').focus(); return; }
+  const go = $('#save-go'); go.disabled = true; go.textContent = 'Saving…'; err.textContent = '';
+  try {
+    const res = await apiPost({action: 'save', record: currentRecord(name, note, by), ownerToken: deviceToken});
+    if (res.eq && !saved.some(r => r.id === res.eq.id)) saved.unshift(res.eq);
+    renderSaved();
+    const e2 = cur(); S.applied[itemKey(S.rec, S.mic)] = {name, g: e2.g.slice(), level: e2.level}; saveLocal(); renderApplied();
+    closeDlg($('#dlg-save')); $('#eq-name').value = ''; $('#eq-note').value = '';
+    toast('Saved “' + name + '”. It is now in the shared list.');
+  } catch (x) {
+    const code = x && x.code;
+    if (code === 'dup') { err.textContent = dupMsg; refreshSaved(); }
+    else if (code === 'quota_exceeded') err.textContent = 'The saved list is full. Ask the owner to delete EQs that are no longer needed.';
+    else if (code === 'bad_request') err.textContent = 'Check the name and try again.';
+    else err.textContent = 'Could not reach the saved list. Check your connection and press Save EQ again.';
+  } finally { go.disabled = false; go.textContent = 'Save EQ'; }
+});
+$('#save-download').addEventListener('click', () => {
+  const name = $('#eq-name').value.trim() || 'Unsaved EQ';
+  offerFile(keyFor(name) + '.json', jsonDoc([currentRecord(name, $('#eq-note').value.trim(), $('#eq-by').value.trim())]));
+});
+
+/* apply */
+let applyTarget = null;
+function openApply(r) {
+  applyTarget = r; const x = gainsFromRecord(r);
+  const desc = 'Made for ' + micName(r.mic) + (r.appliesTo === 'all' ? ' (all recordings).' : ' on ' + recName(r.madeOn) + '.') + (r.mic !== S.mic ? ' You are now on ' + micName(S.mic) + '; it will be applied here.' : '') + (x.extra ? ' Some of its values come from a different slider layout and are left out.' : '');
+  $('#apply-h').textContent = 'Apply “' + r.name + '”'; $('#apply-desc').textContent = desc;
+  valsGrid($('#apply-vals'), x.g, x.level);
+  $('#apply-one').textContent = 'Only ' + recName(S.rec) + ' (' + micName(S.mic) + ')';
+  $('#apply-all').textContent = 'All 4 recordings on ' + micName(S.mic);
+  openDlg('#dlg-apply');
+}
+function doApply(scope) {
+  const r = applyTarget; if (!r) return; const x = gainsFromRecord(r);
+  S.scope[S.mic] = scope;
+  const recs = scope === 'all' ? RECS.map(q => q.id) : [S.rec];
+  setAll(x.g, x.level, recs);
+  recs.forEach(q => { S.applied[itemKey(q, S.mic)] = {name: r.name, g: x.g.slice(), level: x.level}; });
+  S.listen = 'ai'; applyListenToNodes(false);
+  closeDlg($('#dlg-apply')); renderAll(); applyEqToNodes(false); saveLocal();
+  toast('Applied “' + r.name + '” to ' + (scope === 'all' ? 'all 4 recordings.' : recName(S.rec) + '.'));
+}
+$('#apply-one').addEventListener('click', () => doApply('one'));
+$('#apply-all').addEventListener('click', () => doApply('all'));
+
+/* delete */
+let delTarget = null;
+function openDelete(r) { delTarget = r; $('#del-desc').textContent = '“' + r.name + '” will be removed for everyone. This cannot be undone.'; $('#del-err').textContent = ''; openDlg('#dlg-delete'); }
+$('#del-go').addEventListener('click', async () => {
+  const r = delTarget; if (!r) return; const b = $('#del-go'); b.disabled = true;
+  try {
+    await apiPost({action: 'delete', id: r.id, ownerToken: deviceToken, ownerCode: caps.ownerCode || ''});
+    saved = saved.filter(x => x.id !== r.id); renderSaved();
+    closeDlg($('#dlg-delete')); toast('Deleted “' + r.name + '”.');
+  } catch (x) { $('#del-err').textContent = x && x.code === 'not_allowed' ? 'Only the person who saved it (on the same browser) or the owner can delete it.' : 'Could not delete it. Check your connection and try again.'; }
+  finally { b.disabled = false; }
+});
+
+/* owner tools */
+function renderOwner() {
+  const on = !!caps.ownerCode;
+  $('#owner-state').textContent = on ? 'Owner tools are on in this browser. You can delete any saved EQ.' : 'Enter your owner code to delete any saved EQ from this browser.';
+  $('#owner-code').hidden = on; $('#owner-go').hidden = on; $('#owner-off').hidden = !on;
+  $('#owner-err').textContent = '';
+}
+$('#open-owner').addEventListener('click', () => { renderOwner(); openDlg('#dlg-owner'); });
+$('#owner-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const code = $('#owner-code').value.trim(), err = $('#owner-err');
+  if (!code) { err.textContent = 'Type the owner code.'; return; }
+  if (!API) { err.textContent = 'Connect the Google Sheet first.'; return; }
+  const go = $('#owner-go'); go.disabled = true;
+  try { await apiPost({action: 'checkOwner', ownerCode: code}); caps.ownerCode = code; try { localStorage.setItem(LS_KEY + ':owner', code); } catch (x) {} $('#owner-code').value = ''; closeDlg($('#dlg-owner')); renderSaved(); toast('Owner tools are on in this browser.'); }
+  catch (x) { err.textContent = x && x.code === 'unavailable' ? 'Could not reach the saved list. Check your connection.' : 'That code is not right.'; }
+  finally { go.disabled = false; }
+});
+$('#owner-off').addEventListener('click', () => { caps.ownerCode = null; try { localStorage.removeItem(LS_KEY + ':owner'); } catch (x) {} renderOwner(); renderSaved(); toast('Owner tools are off in this browser.'); });
+
+/* ---------- wiring ---------- */
+$('#btn-play').addEventListener('click', togglePlay);
+$('#listen-seg').addEventListener('click', e => { const b = e.target.closest('[data-listen]'); if (b) setListen(b.dataset.listen); });
+$('#scope-seg').addEventListener('click', e => { const b = e.target.closest('[data-scope]'); if (b) setScope(b.dataset.scope); });
+$('#level').addEventListener('input', e => setLevel(parseFloat(e.target.value)));
+$('#btn-match-level').addEventListener('click', matchLevel);
+$('#btn-suggest').addEventListener('click', suggest);
+$('#btn-reset').addEventListener('click', resetEq);
+$('#btn-save').addEventListener('click', openSave);
+const openGuide = () => openDlg('#dlg-guide');
+$('#open-guide').addEventListener('click', openGuide);
+$('#banner-guide-open').addEventListener('click', openGuide);
+$('#banner-guide-hide').addEventListener('click', () => { S.guideHidden = true; $('#banner-guide').hidden = true; saveLocal(); });
+$('#banner-guide').hidden = S.guideHidden;
+radioSet($('#filter-seg'), 'filter', savedFilter);
+// arrow-key movement inside radio groups
+document.querySelectorAll('[role=radiogroup]').forEach(g => g.addEventListener('keydown', e => {
+  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
+  const items = [...g.querySelectorAll('[role=radio]')], i = items.indexOf(document.activeElement); if (i < 0) return;
+  const n = items[(i + (e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]; n.focus(); n.click(); e.preventDefault(); e.stopPropagation();
+}));
+let spaceHandled = false;
+document.addEventListener('keydown', e => {
+  if (document.querySelector('dialog[open]')) return;
+  const t = e.target; if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.code === 'Space' || e.key === ' ') { e.preventDefault(); spaceHandled = true; if (!e.repeat) setListen(S.listen === 'input' ? 'ai' : 'input'); }
+  else if (e.key === 'p' || e.key === 'P') { e.preventDefault(); togglePlay(); }
+});
+document.addEventListener('keyup', e => { if ((e.code === 'Space' || e.key === ' ') && spaceHandled) { e.preventDefault(); spaceHandled = false; } });
+const gb = $('#guide-bands');
+BANDS.forEach(b => { const tr = document.createElement('tr'); [fmtHz(b.freq), b.word, b.hint].forEach(v => { const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); }); gb.appendChild(tr); });
+
+buildSliders();
+renderAll();
+if ('ResizeObserver' in window) { new ResizeObserver(() => renderChart()).observe($('#chart-wrap')); new ResizeObserver(() => drawWave()).observe($('.wave-wrap')); }
+else window.addEventListener('resize', () => { renderChart(); drawWave(); });
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => renderChart());
+renderSaved();
+prepareCurrent();
+initCaps();
+})();
+</script>
+</body>
+</html>
